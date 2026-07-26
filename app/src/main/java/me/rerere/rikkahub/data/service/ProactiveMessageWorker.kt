@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
@@ -25,6 +25,9 @@ import kotlin.random.Random
 /**
  * WorkManager-based fallback for proactive message scheduling.
  * More reliable than AlarmManager on devices with aggressive battery optimization.
+ * 
+ * FIX: Added deduplication check — if AlarmManager already triggered within the
+ * expected window, WorkManager skips its trigger to prevent duplicate messages.
  */
 class ProactiveMessageWorker(
     context: Context,
@@ -45,8 +48,14 @@ class ProactiveMessageWorker(
             val maxMinutes = setting.maxIntervalMinutes.coerceAtLeast(minMinutes)
             val delayMinutes = Random.nextInt(minMinutes, maxMinutes + 1)
 
+            // Add extra buffer (2 minutes) so WorkManager fires AFTER AlarmManager
+            // This ensures AlarmManager is the primary trigger and WorkManager only
+            // fires if AlarmManager was killed by the system
+            val bufferMinutes = 2
+            val totalDelayMinutes = delayMinutes + bufferMinutes
+
             val workRequest = OneTimeWorkRequestBuilder<ProactiveMessageWorker>()
-                .setInitialDelay(delayMinutes.toLong(), TimeUnit.MINUTES)
+                .setInitialDelay(totalDelayMinutes.toLong(), TimeUnit.MINUTES)
                 .build()
 
             WorkManager.getInstance(context)
@@ -57,13 +66,14 @@ class ProactiveMessageWorker(
                 )
 
             // Also save trigger time to SharedPreferences for UI display
+            // Use the original delayMinutes (without buffer) for display purposes
             val triggerTime = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(delayMinutes.toLong())
             context.getSharedPreferences("proactive_message_prefs", Context.MODE_PRIVATE)
                 .edit()
                 .putLong("next_trigger_time", triggerTime)
                 .apply()
 
-            Log.d(TAG, "Scheduled WorkManager proactive message in $delayMinutes minutes")
+            Log.d(TAG, "Scheduled WorkManager proactive message in $totalDelayMinutes minutes (delay=$delayMinutes + buffer=$bufferMinutes)")
         }
 
         fun cancel(context: Context) {
@@ -102,6 +112,25 @@ class ProactiveMessageWorker(
             Log.d(TAG, "Proactive message disabled, skipping")
             return Result.success()
         }
+
+        // === DEDUPLICATION CHECK ===
+        // If AlarmManager already triggered recently (within minInterval), skip this trigger.
+        // This prevents the duplicate message problem where both AlarmManager and WorkManager
+        // fire within a short window.
+        val prefs = applicationContext.getSharedPreferences(
+            ProactiveMessageService.PREFS_NAME, Context.MODE_PRIVATE
+        )
+        val lastTriggeredTime = prefs.getLong("last_triggered_time", 0L)
+        val minIntervalMs = proactiveSetting.minIntervalMinutes.coerceAtLeast(1) * 60 * 1000L
+        val timeSinceLastTrigger = System.currentTimeMillis() - lastTriggeredTime
+
+        if (timeSinceLastTrigger < minIntervalMs) {
+            Log.d(TAG, "AlarmManager already triggered ${timeSinceLastTrigger/1000}s ago (< minInterval ${minIntervalMs/1000}s), skipping WorkManager trigger")
+            // Still schedule the next one
+            scheduleNext(applicationContext, proactiveSetting)
+            return Result.success()
+        }
+        // === END DEDUPLICATION CHECK ===
 
         // Acquire a wake lock for the duration of the work
         val powerManager = applicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
