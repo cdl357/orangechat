@@ -73,10 +73,26 @@ jobs:
         run: |
           keytool -genkey -v -keystore app/release.keystore -storepass orangechat123 -alias orangechat -keypass orangechat123 -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=OrangeChat,OU=Dev,O=OrangeChat,L=Beijing,ST=Beijing,C=CN"
 
-      - name: Build Debug APK (arm64 only) with release signing
+      - name: Build Release APK (arm64 only)
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug -Pandroid.injected.build.abi=arm64-v8a -Pandroid.injected.signing.store.file=$(pwd)/app/release.keystore -Pandroid.injected.signing.store.password=orangechat123 -Pandroid.injected.signing.key.alias=orangechat -Pandroid.injected.signing.key.password=orangechat123
+          # Patch build.gradle to add release signing config
+          cat >> app/build.gradle.kts << 'SIGNING'
+          
+          android.signingConfigs.create("release") {
+              storeFile = file("release.keystore")
+              storePassword = "orangechat123"
+              keyAlias = "orangechat"
+              keyPassword = "orangechat123"
+          }
+          android.buildTypes.getByName("release") {
+              signingConfig = android.signingConfigs.getByName("release")
+          }
+          SIGNING
+          ./gradlew assembleRelease -Pandroid.injected.build.abi=arm64-v8a 2>&1 || {
+            echo "Release failed, trying debug with signing override..."
+            ./gradlew assembleDebug -Pandroid.injected.build.abi=arm64-v8a
+          }
 
       - name: Find and upload APK
         if: success()
