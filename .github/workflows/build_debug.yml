@@ -78,30 +78,34 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug -Pandroid.injected.build.abi=arm64-v8a
 
-      - name: Upload APK to GitHub Artifacts
-        uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: orangechat-debug
-          path: app/build/outputs/apk/debug/*arm64*.apk
-
-      - name: Create GitHub Release with APK
+      - name: Find and upload APK
         if: success()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          APK_FILE=$(find app/build/outputs/apk/debug -name "*arm64*debug.apk" | head -1)
+          # Search for APK files everywhere
+          echo "Searching for APK files..."
+          find app/build/outputs -name "*.apk" -type f 2>/dev/null || true
+          find app/build -name "*.apk" -type f 2>/dev/null || true
+          
+          APK_FILE=$(find app/build -name "*.apk" -type f | head -1)
+          
           if [ -z "$APK_FILE" ]; then
-            APK_FILE=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
+            echo "❌ No APK found anywhere!"
+            find app/build -type d | head -20
+            exit 1
           fi
           
-          TAG="debug-$(date +%Y%m%d-%H%M%S)"
+          echo "Found APK: $APK_FILE"
+          ls -la "$APK_FILE"
+          
+          # Upload as artifact
           
           # Delete old debug release if exists
           gh release delete latest-debug --yes 2>/dev/null || true
           git push origin :refs/tags/latest-debug 2>/dev/null || true
           
-          # Create new release
+          # Create new release with APK
           gh release create latest-debug \
             --title "最新Debug版 ($(date +%Y-%m-%d))" \
             --notes "自动编译 arm64 debug APK" \
