@@ -88,24 +88,37 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
+          echo "DEBUG: SUPABASE_URL length = ${#SUPABASE_URL}"
+          echo "DEBUG: SUPABASE_SERVICE_KEY length = ${#SUPABASE_SERVICE_KEY}"
+          
           APK_FILE=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
+          echo "DEBUG: APK_FILE = ${APK_FILE}"
+          
+          if [ -z "$APK_FILE" ]; then
+            echo "❌ No APK found!"
+            exit 1
+          fi
+          
+          ls -la "$APK_FILE"
+          
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
           FILENAME="orangechat-debug-${TIMESTAMP}.apk"
           
           # Upload to Supabase Storage
-          curl -X POST \
+          echo "Uploading ${FILENAME}..."
+          curl -v -X POST \
             "${SUPABASE_URL}/storage/v1/object/apk-releases/${FILENAME}" \
             -H "Authorization: Bearer ${SUPABASE_SERVICE_KEY}" \
             -H "Content-Type: application/vnd.android.package-archive" \
-            --data-binary @"${APK_FILE}"
+            --data-binary @"${APK_FILE}" 2>&1
           
           # Also upload as "latest" for easy access
-          curl -X POST \
+          echo "Uploading latest..."
+          curl -v -X POST \
             "${SUPABASE_URL}/storage/v1/object/apk-releases/orangechat-debug-latest.apk" \
             -H "Authorization: Bearer ${SUPABASE_SERVICE_KEY}" \
             -H "Content-Type: application/vnd.android.package-archive" \
             -H "x-upsert: true" \
-            --data-binary @"${APK_FILE}"
+            --data-binary @"${APK_FILE}" 2>&1
           
-          echo "✅ APK uploaded: ${SUPABASE_URL}/storage/v1/object/public/apk-releases/${FILENAME}"
-          echo "✅ Latest: ${SUPABASE_URL}/storage/v1/object/public/apk-releases/orangechat-debug-latest.apk"
+          echo "✅ Done. Check: ${SUPABASE_URL}/storage/v1/object/public/apk-releases/${FILENAME}"
