@@ -66,18 +66,46 @@ jobs:
           }
           EOF
 
-      - name: Build Debug APK
-        run: |
       - name: Generate debug keystore
         run: |
           keytool -genkey -v -keystore app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Debug,OU=Debug,O=Debug,L=Debug,ST=Debug,C=US"
 
+      - name: Build Debug APK
+        run: |
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      - name: Upload APK
+      - name: Upload APK to GitHub Artifacts
         uses: actions/upload-artifact@v4
         if: success()
         with:
           name: orangechat-debug
           path: app/build/outputs/apk/debug/*.apk
+
+      - name: Upload APK to Supabase Storage
+        if: success()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          APK_FILE=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          FILENAME="orangechat-debug-${TIMESTAMP}.apk"
+          
+          # Upload to Supabase Storage
+          curl -X POST \
+            "${SUPABASE_URL}/storage/v1/object/apk-releases/${FILENAME}" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_KEY}" \
+            -H "Content-Type: application/vnd.android.package-archive" \
+            --data-binary @"${APK_FILE}"
+          
+          # Also upload as "latest" for easy access
+          curl -X POST \
+            "${SUPABASE_URL}/storage/v1/object/apk-releases/orangechat-debug-latest.apk" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_KEY}" \
+            -H "Content-Type: application/vnd.android.package-archive" \
+            -H "x-upsert: true" \
+            --data-binary @"${APK_FILE}"
+          
+          echo "✅ APK uploaded: ${SUPABASE_URL}/storage/v1/object/public/apk-releases/${FILENAME}"
+          echo "✅ Latest: ${SUPABASE_URL}/storage/v1/object/public/apk-releases/orangechat-debug-latest.apk"
