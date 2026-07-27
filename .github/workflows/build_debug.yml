@@ -5,6 +5,9 @@ on:
     branches: [ master ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -70,55 +73,39 @@ jobs:
         run: |
           keytool -genkey -v -keystore app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Debug,OU=Debug,O=Debug,L=Debug,ST=Debug,C=US"
 
-      - name: Build Debug APK
+      - name: Build Debug APK (arm64 only)
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug -Pandroid.injected.build.abi=arm64-v8a
 
       - name: Upload APK to GitHub Artifacts
         uses: actions/upload-artifact@v4
         if: success()
         with:
           name: orangechat-debug
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/*arm64*.apk
 
-      - name: Upload APK to Supabase Storage
+      - name: Create GitHub Release with APK
         if: success()
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "DEBUG: SUPABASE_URL length = ${#SUPABASE_URL}"
-          echo "DEBUG: SUPABASE_SERVICE_KEY length = ${#SUPABASE_SERVICE_KEY}"
-          
-          APK_FILE=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
-          echo "DEBUG: APK_FILE = ${APK_FILE}"
-          
+          APK_FILE=$(find app/build/outputs/apk/debug -name "*arm64*debug.apk" | head -1)
           if [ -z "$APK_FILE" ]; then
-            echo "❌ No APK found!"
-            exit 1
+            APK_FILE=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
           fi
           
-          ls -la "$APK_FILE"
+          TAG="debug-$(date +%Y%m%d-%H%M%S)"
           
-          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-          FILENAME="orangechat-debug-${TIMESTAMP}.apk"
+          # Delete old debug release if exists
+          gh release delete latest-debug --yes 2>/dev/null || true
+          git push origin :refs/tags/latest-debug 2>/dev/null || true
           
-          # Upload to Supabase Storage
-          echo "Uploading ${FILENAME}..."
-          curl -v -X POST \
-            "${SUPABASE_URL}/storage/v1/object/apk-releases/${FILENAME}" \
-            -H "Authorization: Bearer ${SUPABASE_SERVICE_KEY}" \
-            -H "Content-Type: application/vnd.android.package-archive" \
-            --data-binary @"${APK_FILE}" 2>&1
+          # Create new release
+          gh release create latest-debug \
+            --title "最新Debug版 ($(date +%Y-%m-%d))" \
+            --notes "自动编译 arm64 debug APK" \
+            --prerelease \
+            "$APK_FILE#orangechat-debug.apk"
           
-          # Also upload as "latest" for easy access
-          echo "Uploading latest..."
-          curl -v -X POST \
-            "${SUPABASE_URL}/storage/v1/object/apk-releases/orangechat-debug-latest.apk" \
-            -H "Authorization: Bearer ${SUPABASE_SERVICE_KEY}" \
-            -H "Content-Type: application/vnd.android.package-archive" \
-            -H "x-upsert: true" \
-            --data-binary @"${APK_FILE}" 2>&1
-          
-          echo "✅ Done. Check: ${SUPABASE_URL}/storage/v1/object/public/apk-releases/${FILENAME}"
+          echo "✅ Release: https://github.com/cdl357/orangechat/releases/tag/latest-debug"
