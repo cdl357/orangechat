@@ -69,47 +69,33 @@ jobs:
           }
           EOF
 
-      - name: Generate debug keystore
+      - name: Generate release keystore
         run: |
-          keytool -genkey -v -keystore app/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Debug,OU=Debug,O=Debug,L=Debug,ST=Debug,C=US"
+          keytool -genkey -v -keystore app/release.keystore -storepass orangechat123 -alias orangechat -keypass orangechat123 -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=OrangeChat,OU=Dev,O=OrangeChat,L=Beijing,ST=Beijing,C=CN"
 
-      - name: Build Debug APK (arm64 only)
+      - name: Build Release APK (arm64 only)
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug -Pandroid.injected.build.abi=arm64-v8a
+          ./gradlew assembleRelease -Pandroid.injected.build.abi=arm64-v8a -Pandroid.injected.signing.store.file=$(pwd)/app/release.keystore -Pandroid.injected.signing.store.password=orangechat123 -Pandroid.injected.signing.key.alias=orangechat -Pandroid.injected.signing.key.password=orangechat123
 
       - name: Find and upload APK
         if: success()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Search for APK files everywhere
           echo "Searching for APK files..."
-          find app/build/outputs -name "*.apk" -type f 2>/dev/null || true
           find app/build -name "*.apk" -type f 2>/dev/null || true
-          
-          APK_FILE=$(find app/build -name "*.apk" -type f | head -1)
-          
+          APK_FILE=$(find app/build -name "*release*.apk" -type f | head -1)
           if [ -z "$APK_FILE" ]; then
-            echo "❌ No APK found anywhere!"
-            find app/build -type d | head -20
+            APK_FILE=$(find app/build -name "*.apk" -type f | head -1)
+          fi
+          if [ -z "$APK_FILE" ]; then
+            echo "No APK found!"
             exit 1
           fi
-          
-          echo "Found APK: $APK_FILE"
+          echo "Found: $APK_FILE"
           ls -la "$APK_FILE"
-          
-          # Upload as artifact
-          
-          # Delete old debug release if exists
           gh release delete latest-debug --yes 2>/dev/null || true
           git push origin :refs/tags/latest-debug 2>/dev/null || true
-          
-          # Create new release with APK
-          gh release create latest-debug \
-            --title "最新Debug版 ($(date +%Y-%m-%d))" \
-            --notes "自动编译 arm64 debug APK" \
-            --prerelease \
-            "$APK_FILE#orangechat-debug.apk"
-          
-          echo "✅ Release: https://github.com/cdl357/orangechat/releases/tag/latest-debug"
+          gh release create latest-debug --title "OrangeChat Latest" --notes "arm64 release APK" --prerelease "$APK_FILE#orangechat-release.apk"
+          echo "Done"
