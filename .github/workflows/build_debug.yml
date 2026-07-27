@@ -73,14 +73,17 @@ jobs:
         run: |
           keytool -genkey -v -keystore app/release.keystore -storepass orangechat123 -alias orangechat -keypass orangechat123 -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=OrangeChat,OU=Dev,O=OrangeChat,L=Beijing,ST=Beijing,C=CN"
 
-      - name: Build Debug APK (arm64 only)
+      - name: Build Debug APK
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug -Pandroid.injected.build.abi=arm64-v8a
+          ./gradlew assembleDebug
 
       - name: Re-sign APK with release key
         run: |
-          APK_FILE=$(find app/build -name "*.apk" -type f | head -1)
+          APK_FILE=$(find app/build -name "*arm64*debug.apk" -type f | head -1)
+          if [ -z "$APK_FILE" ]; then
+            APK_FILE=$(find app/build -name "*.apk" -type f | head -1)
+          fi
           echo "Original APK: $APK_FILE"
           
           # Find apksigner
