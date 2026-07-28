@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
@@ -7,6 +7,7 @@
 package me.rerere.rikkahub.di
 
 import android.content.Context
+import android.os.Environment
 import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.files.SkillManager
@@ -53,7 +54,7 @@ val repositoryModule = module {
     single {
         val context: Context = get()
         WorkspaceManager(
-            baseDir = File(context.filesDir, "workspaces"),
+            baseDir = File(Environment.getExternalStorageDirectory(), "Orangechat/workspaces"),
             shellRunner = ProotShellRunner(
                 nativeLibraryDir = File(context.applicationInfo.nativeLibraryDir),
                 extraBindMounts = listOf(
