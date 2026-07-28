@@ -77,11 +77,17 @@ jobs:
       - name: Build Debug APK
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+          # Write local.properties for release signing
+          echo "storeFile=release.keystore" > local.properties
+          echo "storePassword=orangechat123" >> local.properties
+          echo "keyAlias=orangechat" >> local.properties
+          echo "keyPassword=orangechat123" >> local.properties
+          chmod +x gradlew
+          ./gradlew assembleRelease
 
       - name: Re-sign APK with release key
         run: |
-          APK_FILE=$(find app/build -name "*arm64*debug.apk" -type f | head -1)
+          APK_FILE=$(find app/build -name "*arm64*release*.apk" -type f | head -1)
           if [ -z "$APK_FILE" ]; then
             APK_FILE=$(find app/build -name "*.apk" -type f | head -1)
           fi
@@ -106,7 +112,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          APK_FILE=$(find app/build -name "*-signed.apk" -type f | head -1)
+          APK_FILE=$(find app/build -name "*release*.apk" -not -name "*unsigned*" -type f | head -1)
           if [ -z "$APK_FILE" ]; then
             echo "No signed APK found!"
             exit 1
