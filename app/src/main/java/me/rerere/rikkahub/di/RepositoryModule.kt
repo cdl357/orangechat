@@ -7,7 +7,6 @@
 package me.rerere.rikkahub.di
 
 import android.content.Context
-import android.os.Environment
 import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.files.SkillManager
@@ -54,7 +53,7 @@ val repositoryModule = module {
     single {
         val context: Context = get()
         WorkspaceManager(
-            baseDir = File(Environment.getExternalStorageDirectory(), "Orangechat/workspaces"),
+            baseDir = File(context.filesDir, "workspaces"),
             shellRunner = ProotShellRunner(
                 nativeLibraryDir = File(context.applicationInfo.nativeLibraryDir),
                 extraBindMounts = listOf(
