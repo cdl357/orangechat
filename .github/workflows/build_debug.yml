@@ -114,5 +114,6 @@ jobs:
           echo "Uploading: $APK_FILE"
           gh release delete latest-debug --yes 2>/dev/null || true
           git push origin :refs/tags/latest-debug 2>/dev/null || true
-          gh release create latest-debug --title "OrangeChat Latest" --notes "arm64 release-signed APK" --prerelease "$APK_FILE#orangechat.apk"
+          git tag -d latest-debug 2>/dev/null || true
+          gh release create latest-debug --target master --title "OrangeChat Latest" --notes "arm64 release-signed APK" --prerelease "$APK_FILE#orangechat.apk"
           echo "Done"
