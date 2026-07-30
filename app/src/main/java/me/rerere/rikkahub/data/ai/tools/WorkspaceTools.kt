@@ -452,6 +452,7 @@ private fun WorkspaceFileEntry.toJson() = buildJsonObject {
     put("isDirectory", isDirectory)
     put("sizeBytes", sizeBytes)
     put("updatedAt", updatedAt)
+}
 
 private fun createListDirectoryTool(
     workspaceId: String,
@@ -459,7 +460,7 @@ private fun createListDirectoryTool(
     workspaceRepository: WorkspaceRepository,
 ) = Tool(
     name = "workspace_list_directory",
-    description = "List files and directories at the specified path in the workspace Rootfs. Returns name, type (file/dir), size, and modification time.",
+    description = "List files and directories at the specified path in the workspace Rootfs.",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
@@ -472,23 +473,9 @@ private fun createListDirectoryTool(
     execute = {
         val params = it.jsonObject
         val path = params.absolutePath("path")
-        val command = """
-            if [ ! -d ${path.shellQuote()} ]; then printf 'Not a directory: %s' ${path.shellQuote()} >&2; exit 1; fi
-            for entry in ${path.shellQuote()}/* ${path.shellQuote()}/.*; do
-              [ -e "$entry" ] || continue
-              bname=$(basename -- "$entry")
-              [ "$bname" = "." ] || [ "$bname" = ".." ] && continue
-              if [ -d "$entry" ]; then entry_type=d; else entry_type=f; fi
-              entry_size=$(stat -c '%s' -- "$entry" 2>/dev/null || echo 0)
-              entry_mtime=$(stat -c '%Y' -- "$entry" 2>/dev/null || echo 0)
-              printf '%s\u0000%s\u0000%s\u0000%s\u0000' "$entry_type" "$entry_size" "$entry_mtime" "$entry"
-            done
-        """.trimIndent()
+        val command = "ls -la ${path.shellQuote()} 2>&1 | head -100"
         val result = workspaceRepository.executeCommand(workspaceId, command, timeoutMillis = 10000L)
-        val entries = result.stdout.parseRootfsEntries()
-        listOf(UIMessagePart.Text(entries.joinToString("\n") { e ->
-            "${if (e.isDirectory) "d" else "f"} ${e.sizeBytes}B ${e.name}"
-        }.ifBlank { "(empty directory)" }))
+        listOf(UIMessagePart.Text(result.stdout.ifBlank { "Empty or not found" }))
     },
 )
 
@@ -585,4 +572,3 @@ private fun createDeleteFileTool(
         listOf(UIMessagePart.Text(if (result.exitCode == 0) "Deleted: $path" else "Error: ${result.stderr}"))
     },
 )
-}
