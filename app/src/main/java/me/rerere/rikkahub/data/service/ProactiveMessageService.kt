@@ -332,6 +332,28 @@ class ProactiveMessageService : KoinComponent {
         sb.appendLine()
         sb.appendLine("请根据以上上下文，以自然、关心、有趣的方式主动给用户发一条消息。")
         sb.appendLine()
+        // 注入最近的AI主动消息，让AI知道之前说了什么
+        try {
+            val assistantId = settings.assistants.find { it.id.toString() == settings.proactiveMessageSetting.assistantId }?.id ?: settings.getCurrentAssistant().id
+            val recentConvs = conversationRepository.getRecentConversations(assistantId, limit = 1)
+            if (recentConvs.isNotEmpty()) {
+                val conv = conversationRepository.getConversationById(recentConvs.first().id)
+                val recentAiMsgs = conv?.messageNodes?.asReversed()?.take(10)
+                    ?.flatMap { it.messages }
+                    ?.filter { it.role == MessageRole.ASSISTANT }
+                    ?.take(3)
+                    ?.flatMap { it.parts.filterIsInstance<UIMessagePart.Text>() }
+                    ?.map { it.text.trim() }
+                    ?.filter { it.isNotBlank() && !it.contains("[PASS]") }
+                if (!recentAiMsgs.isNullOrEmpty()) {
+                    sb.appendLine()
+                    sb.appendLine("你最近发过的消息（绝对不要重复这些内容，必须换新话题）:")
+                    recentAiMsgs.forEachIndexed { i, msg -> sb.appendLine("  ${i+1}. ${msg.take(60)}") }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to get recent AI messages for dedup", e)
+        }
         sb.appendLine("重要规则：")
         sb.appendLine("- 绝对不要复述上一轮的对话内容，要发新的话题或新的关心")
         sb.appendLine("- 如果上一轮已经说过类似的话，这次换一个完全不同的角度")
@@ -690,7 +712,12 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
 
                 Log.d(TAG, "Proactive message generated: '${replyText.take(100)}...' (${replyText.length} chars), hasToolCalls=$hasToolCalls, shouldJump=$shouldJump")
 
-                if (replyText.isBlank() || rawText.contains("[PASS]")) {
+                // 去重检查：对比最近3条AI主动消息，如果过于相似则自动PASS
+                val isDuplicate = checkDuplicate(replyText, conversation)
+                if (isDuplicate) {
+                    Log.d(TAG, "Proactive message detected as duplicate, auto-PASS")
+                }
+                if (replyText.isBlank() || rawText.contains("[PASS]") || isDuplicate) {
                     // AI 选择跳过，移除本次生成的 aiMessage node（基于 id 匹配，不误删历史）
                     Log.d(ProactiveMessageService.TAG, "AI chose to skip proactive message")
                     val aiId = aiMessage.id
@@ -1252,5 +1279,28 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
         return Triple(messages, hasToolCalls, hasJumpFlag)
     }
 
+    /**
+     * 检查新生成的主动消息是否与最近的消息重复。
+     * 简单相似度：如果新消息的前20字与最近3条AI消息的任一条前20字完全相同，判定为重复。
+     */
+    private fun checkDuplicate(newText: String, conversation: Conversation?): Boolean {
+        if (newText.isBlank() || conversation == null) return false
+        val newPrefix = newText.take(20).trim()
+        if (newPrefix.length < 5) return false
+        val recentAssistantTexts = conversation.messageNodes
+            .asReversed()
+            .take(10)
+            .flatMap { it.messages }
+            .filter { it.role == MessageRole.ASSISTANT }
+            .take(3)
+            .flatMap { it.parts.filterIsInstance<UIMessagePart.Text>() }
+            .map { it.text.trim() }
+        return recentAssistantTexts.any { existingText ->
+            val existingPrefix = existingText.take(20).trim()
+            newPrefix == existingPrefix || newText == existingText
+        }
+    }
+
     override fun onBind(intent: Intent?): android.os.IBinder? = null
 }
+
