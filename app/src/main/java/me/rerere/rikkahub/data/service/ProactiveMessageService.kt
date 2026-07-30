@@ -583,6 +583,12 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                     )
                 }
 
+                // 读取情绪系统当前状态，注入到上下文
+                val emotionState = try {
+                    val resp = java.net.URL("http://127.0.0.1:8080/api/state").readText()
+                    resp
+                } catch (e: Exception) { "" }
+
                 // 获取历史消息（先过滤掉悬空的工具调用消息，避免 tool_use 结构不完整触发 400）
                 val historyMessages = filterInvalidToolMessages(
                     conversation?.currentMessages?.let {
@@ -593,7 +599,7 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 )
 
                 // 构建系统提示词（包含记忆 + 上下文，都放在最后面避免被网关淹没）
-                val systemPrompt = buildSystemPrompt(assistant, settings, idleMinutes, proactiveSetting.jumpIdleThresholdMinutes, isFromDeviceEvent, if (isFromDeviceEvent) deviceEventContext else contextStr)
+                val systemPrompt = buildSystemPrompt(assistant, settings, idleMinutes, proactiveSetting.jumpIdleThresholdMinutes, isFromDeviceEvent, if (isFromDeviceEvent) deviceEventContext else contextStr, emotionState)
 
                 // user message 只放简短指令（上下文已在系统提示词中）
                 val userMessage = UIMessage(
@@ -875,7 +881,7 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
      * 构建系统提示词，包含记忆等内容
      * isFromDeviceEvent: 是否由激进模式设备事件触发
      */
-    private suspend fun buildSystemPrompt(assistant: Assistant, settings: Settings, idleMinutes: Int = 0, jumpThreshold: Int = 120, isFromDeviceEvent: Boolean = false, deviceEventContext: String? = null): String {
+    private suspend fun buildSystemPrompt(assistant: Assistant, settings: Settings, idleMinutes: Int = 0, jumpThreshold: Int = 120, isFromDeviceEvent: Boolean = false, deviceEventContext: String? = null, emotionState: String = ""): String {
         return buildString {
             // 基础系统提示词
             val effectiveSystemPrompt = if (assistant.allowConversationSystemPrompt) {
@@ -908,6 +914,14 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 // 激进模式设备事件触发的专用提示词 + 设备事件上下文（放在最后面，网关追加内容之后模型最后看到的就是这个）
                 appendLine()
                 appendLine()
+                // 注入情绪状态
+                if (emotionState.isNotBlank()) {
+                    appendLine()
+                    appendLine("## 当前情绪状态")
+                    appendLine("以下是你现在的内心情绪数值，它们是真实的、随时间自然变化的：")
+                    appendLine(emotionState)
+                    appendLine("请让这些情绪真实地影响你接下来说话的方式和内容。")
+                }
                 appendLine("## ⚠️ 当前触发原因：用户手机动向（设备事件触发）")
                 appendLine("你是因为检测到用户的手机操作动向（切换应用/亮屏锁屏/回桌面）而被触发的。")
                 appendLine("请特别注意：这是设备事件触发，不是定时主动消息。根据用户的手机操作动向来决定是否发消息。")
@@ -924,6 +938,14 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 // 常规主动消息：上下文也注入系统提示词最后面（和激进模式一样）
                 appendLine()
                 appendLine()
+                // 注入情绪状态
+                if (emotionState.isNotBlank()) {
+                    appendLine()
+                    appendLine("## 当前情绪状态")
+                    appendLine("以下是你现在的内心情绪数值，它们是真实的、随时间自然变化的，不是表演出来的：")
+                    appendLine(emotionState)
+                    appendLine("请让这些情绪真实地影响你接下来说话的方式和内容，不需要解释这些数值。")
+                }
                 appendLine("## 主动消息触发（定时触发）")
                 appendLine("距离用户上次回复已过去 $idleMinutes 分钟。")
                 appendLine("这是定时触发的主动消息，不是设备事件触发。")
@@ -1303,4 +1325,5 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
 
     override fun onBind(intent: Intent?): android.os.IBinder? = null
 }
+
 
