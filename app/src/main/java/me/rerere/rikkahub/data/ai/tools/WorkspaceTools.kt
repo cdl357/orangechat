@@ -33,6 +33,10 @@ val WorkspaceToolDefaultApprovals: Map<String, Boolean> = mapOf(
     "workspace_write_file" to false,
     "workspace_edit_file" to false,
     "workspace_shell" to true,
+    "workspace_list_directory" to false,
+    "workspace_search_files" to false,
+    "workspace_move_file" to true,
+    "workspace_delete_file" to true,
 )
  
 fun resolveWorkspaceToolApproval(name: String, overrides: Map<String, Boolean>): Boolean =
@@ -54,6 +58,10 @@ suspend fun createWorkspaceTools(
         createWriteFileTool(workspaceId, needsApproval("workspace_write_file"), workspaceRepository),
         createEditFileTool(workspaceId, needsApproval("workspace_edit_file"), workspaceRepository),
         createShellTool(workspaceId, needsApproval("workspace_shell"), workspaceRepository, shellCwd),
+        createListDirectoryTool(workspaceId, needsApproval("workspace_list_directory"), workspaceRepository),
+        createSearchFilesTool(workspaceId, needsApproval("workspace_search_files"), workspaceRepository),
+        createMoveFileTool(workspaceId, needsApproval("workspace_move_file"), workspaceRepository),
+        createDeleteFileTool(workspaceId, needsApproval("workspace_delete_file"), workspaceRepository),
     )
 }
  
@@ -444,4 +452,137 @@ private fun WorkspaceFileEntry.toJson() = buildJsonObject {
     put("isDirectory", isDirectory)
     put("sizeBytes", sizeBytes)
     put("updatedAt", updatedAt)
+
+private fun createListDirectoryTool(
+    workspaceId: String,
+    needsApproval: Boolean,
+    workspaceRepository: WorkspaceRepository,
+) = Tool(
+    name = "workspace_list_directory",
+    description = "List files and directories at the specified path in the workspace Rootfs. Returns name, type (file/dir), size, and modification time.",
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                putPathProperty(true)
+            },
+            required = listOf("path"),
+        )
+    },
+    needsApproval = needsApproval,
+    execute = {
+        val params = it.jsonObject
+        val path = params.absolutePath("path")
+        val command = """
+            if [ ! -d ${path.shellQuote()} ]; then printf 'Not a directory: %s' ${path.shellQuote()} >&2; exit 1; fi
+            for entry in ${path.shellQuote()}/* ${path.shellQuote()}/.*; do
+              [ -e "$entry" ] || continue
+              bname=$(basename -- "$entry")
+              [ "$bname" = "." ] || [ "$bname" = ".." ] && continue
+              if [ -d "$entry" ]; then entry_type=d; else entry_type=f; fi
+              entry_size=$(stat -c '%s' -- "$entry" 2>/dev/null || echo 0)
+              entry_mtime=$(stat -c '%Y' -- "$entry" 2>/dev/null || echo 0)
+              printf '%s\u0000%s\u0000%s\u0000%s\u0000' "$entry_type" "$entry_size" "$entry_mtime" "$entry"
+            done
+        """.trimIndent()
+        val result = workspaceRepository.executeCommand(workspaceId, command, timeoutMillis = 10000L)
+        val entries = result.stdout.parseRootfsEntries()
+        listOf(UIMessagePart.Text(entries.joinToString("\n") { e ->
+            "${if (e.isDirectory) "d" else "f"} ${e.sizeBytes}B ${e.name}"
+        }.ifBlank { "(empty directory)" }))
+    },
+)
+
+private fun createSearchFilesTool(
+    workspaceId: String,
+    needsApproval: Boolean,
+    workspaceRepository: WorkspaceRepository,
+) = Tool(
+    name = "workspace_search_files",
+    description = "Search for a text pattern (grep) in files under a directory in the workspace Rootfs. Returns matching lines with file paths.",
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                putPathProperty(true)
+                put("pattern", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Text pattern or regex to search for")
+                })
+                put("glob", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Optional filename glob filter (e.g. *.kt). Defaults to all files.")
+                })
+            },
+            required = listOf("path", "pattern"),
+        )
+    },
+    needsApproval = needsApproval,
+    execute = {
+        val params = it.jsonObject
+        val path = params.absolutePath("path")
+        val pattern = params.string("pattern") ?: error("pattern is required")
+        val glob = params.string("glob")
+        val includeArg = if (!glob.isNullOrBlank()) "--include=${glob.shellQuote()}" else ""
+        val command = "grep -rn $includeArg ${pattern.shellQuote()} ${path.shellQuote()} 2>/dev/null | head -50"
+        val result = workspaceRepository.executeCommand(workspaceId, command, timeoutMillis = 15000L)
+        listOf(UIMessagePart.Text(result.stdout.ifBlank { "No matches found." }))
+    },
+)
+
+private fun createMoveFileTool(
+    workspaceId: String,
+    needsApproval: Boolean,
+    workspaceRepository: WorkspaceRepository,
+) = Tool(
+    name = "workspace_move_file",
+    description = "Move or rename a file/directory in the workspace Rootfs.",
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                put("source", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Absolute source path inside Rootfs")
+                })
+                put("destination", buildJsonObject {
+                    put("type", "string")
+                    put("description", "Absolute destination path inside Rootfs")
+                })
+            },
+            required = listOf("source", "destination"),
+        )
+    },
+    needsApproval = needsApproval,
+    execute = {
+        val params = it.jsonObject
+        val src = params.string("source")?.trim() ?: error("source is required")
+        val dst = params.string("destination")?.trim() ?: error("destination is required")
+        val command = "mv ${src.shellQuote()} ${dst.shellQuote()} && echo OK"
+        val result = workspaceRepository.executeCommand(workspaceId, command, timeoutMillis = 10000L)
+        listOf(UIMessagePart.Text(if (result.exitCode == 0) "Moved: $src -> $dst" else "Error: ${result.stderr}"))
+    },
+)
+
+private fun createDeleteFileTool(
+    workspaceId: String,
+    needsApproval: Boolean,
+    workspaceRepository: WorkspaceRepository,
+) = Tool(
+    name = "workspace_delete_file",
+    description = "Delete a file or empty directory in the workspace Rootfs. For safety, does not recursively delete non-empty directories.",
+    parameters = {
+        InputSchema.Obj(
+            properties = buildJsonObject {
+                putPathProperty(true)
+            },
+            required = listOf("path"),
+        )
+    },
+    needsApproval = needsApproval,
+    execute = {
+        val params = it.jsonObject
+        val path = params.absolutePath("path")
+        val command = "if [ -d ${path.shellQuote()} ]; then rmdir ${path.shellQuote()}; else rm ${path.shellQuote()}; fi && echo OK"
+        val result = workspaceRepository.executeCommand(workspaceId, command, timeoutMillis = 10000L)
+        listOf(UIMessagePart.Text(if (result.exitCode == 0) "Deleted: $path" else "Error: ${result.stderr}"))
+    },
+)
 }
