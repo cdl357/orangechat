@@ -345,6 +345,16 @@ class ChatCompletionsAPI(
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
                 var exception = t
 
+                // OkHttp SSE: 流式响应结束后 coroutine 被取消会触发 IOException("canceled")
+                // 但 response=200 说明内容已完整接收，直接视为正常关闭，不报错不重试。
+                val isCanceledAfterSuccess = t != null &&
+                    t.message == "canceled" &&
+                    response?.code == 200
+                if (isCanceledAfterSuccess) {
+                    close()
+                    return
+                }
+
                 t?.printStackTrace()
                 val failureMsg = "onFailure: ${t?.javaClass?.name} ${t?.message} / response=$response"
                 Log.e(TAG, failureMsg)
@@ -955,3 +965,4 @@ class ChatCompletionsAPI(
         return events
     }
 }
+
