@@ -109,7 +109,14 @@ class DeviceEventAiTriggerService : Service() {
     private var lastPollTimeMs: Long = 0L
 
     // 上次 AI 思考时间，用于限流
-    private var lastAiTriggerTimeMs: Long = 0L
+    // 使用 SharedPreferences 持久化，防止 Service 重启后失忆导致限流失效
+    private val PREFS_AGGRESSIVE = "aggressive_mode_prefs"
+    private val KEY_LAST_TRIGGER = "last_ai_trigger_time"
+    private val lastAiTriggerTimeMs: Long
+        get() = getSharedPreferences(PREFS_AGGRESSIVE, android.content.Context.MODE_PRIVATE)
+            .getLong(KEY_LAST_TRIGGER, 0L)
+    private fun setLastAiTriggerTimeMs(v: Long) = getSharedPreferences(PREFS_AGGRESSIVE, android.content.Context.MODE_PRIVATE)
+        .edit().putLong(KEY_LAST_TRIGGER, v).apply()
 
     private data class DeviceEvent(
         val type: String,        // screen_on, screen_off, app_switch, home
@@ -335,7 +342,7 @@ class DeviceEventAiTriggerService : Service() {
                 return
             }
 
-            lastAiTriggerTimeMs = now
+            setLastAiTriggerTimeMs(now)
             Log.d(TAG, "Triggering AI thinking with ${events.size} events")
 
             // 构建事件上下文
