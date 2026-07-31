@@ -306,11 +306,20 @@ class DeviceEventAiTriggerService : Service() {
                 return
             }
 
-            // 限流检查
+            // 限流检查（内存）
             val minIntervalMs = proactiveSetting.aggressiveMinIntervalSeconds * 1000L
             val now = System.currentTimeMillis()
             if (now - lastAiTriggerTimeMs < minIntervalMs) {
                 Log.d(TAG, "Rate limited, skip (${(now - lastAiTriggerTimeMs) / 1000}s < ${proactiveSetting.aggressiveMinIntervalSeconds}s)")
+                return
+            }
+
+            // 跨源去重检查：如果定时主动消息刚刚触发过，激进模式跳过，避免双重发送
+            val sharedPrefs = getSharedPreferences(ProactiveMessageService.PREFS_NAME, android.content.Context.MODE_PRIVATE)
+            val lastTriggeredTime = sharedPrefs.getLong("last_triggered_time", 0L)
+            val crossSourceCooldownMs = 60_000L // 60秒内定时触发过，激进模式不再触发
+            if (now - lastTriggeredTime < crossSourceCooldownMs) {
+                Log.d(TAG, "Cross-source dedup: proactive message triggered ${(now - lastTriggeredTime) / 1000}s ago, skip aggressive trigger")
                 return
             }
 
