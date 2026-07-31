@@ -68,13 +68,20 @@ jobs:
           }
           GSEOF
 
-      - name: Generate keystore and build release
+      - name: Setup fixed keystore and build release
+        env:
+          RELEASE_KEYSTORE: ${{ secrets.RELEASE_KEYSTORE }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          keytool -genkey -v -keystore app/release.keystore -storepass orangechat123 -alias orangechat -keypass orangechat123 -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=OrangeChat,OU=Dev,O=OrangeChat,L=Beijing,ST=Beijing,C=CN"
-          echo "storeFile=release.keystore" > local.properties
-          echo "storePassword=orangechat123" >> local.properties
-          echo "keyAlias=orangechat" >> local.properties
-          echo "keyPassword=orangechat123" >> local.properties
+          echo "$RELEASE_KEYSTORE" | base64 -d > app/release.keystore
+          cat > local.properties << EOF
+          storeFile=release.keystore
+          storePassword=$RELEASE_STORE_PASSWORD
+          keyAlias=$RELEASE_KEY_ALIAS
+          keyPassword=$RELEASE_KEY_PASSWORD
+          EOF
           chmod +x gradlew
           ./gradlew assembleRelease
 
