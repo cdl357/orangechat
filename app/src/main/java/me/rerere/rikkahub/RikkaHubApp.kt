@@ -40,6 +40,7 @@ import me.rerere.rikkahub.data.service.DeviceEventAiTriggerService
 import me.rerere.rikkahub.data.service.DeviceEventTrackingService
 import me.rerere.rikkahub.data.service.ProactiveMessageService
 import me.rerere.rikkahub.data.service.SupabaseSyncService
+import me.rerere.rikkahub.data.service.KeepAlivePollingWorker
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.service.WebServerService
 import me.rerere.rikkahub.utils.CrashHandler
@@ -116,6 +117,9 @@ class RikkaHubApp : Application() {
 
         // Reschedule Supabase sync alarm if enabled
         rescheduleSupabaseSyncIfEnabled()
+
+        // Start KeepAlive polling
+        KeepAlivePollingWorker.schedule(this)
 
         // Start device event tracking (screen on/off realtime listener) if enabled
         startDeviceEventTrackingIfEnabled()
