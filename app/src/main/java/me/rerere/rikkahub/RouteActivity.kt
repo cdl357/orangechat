@@ -172,6 +172,8 @@ import me.rerere.rikkahub.ui.pages.todo.TodoPage
 import me.rerere.rikkahub.ui.pages.diary.DiaryPage
 import me.rerere.rikkahub.ui.pages.bulletin.BulletinPage
 import me.rerere.rikkahub.ui.pages.album.AlbumPage
+import me.rerere.rikkahub.ui.pages.tide.TidePage
+import me.rerere.rikkahub.ui.pages.moments.MomentsPage
  import me.rerere.rikkahub.ui.pages.voice.IncomingCallPage
  import me.rerere.rikkahub.ui.pages.voice.VoiceCallPage
 import me.rerere.rikkahub.service.VoiceCallService
@@ -870,6 +872,14 @@ entry<Screen.Extensions> {
                                 AlbumPage()
                             }
 
+                            entry<Screen.Tide> {
+                                TidePage()
+                            }
+
+                            entry<Screen.Moments> {
+                                MomentsPage()
+                            }
+
                             entry<Screen.Legal> { key ->
                                 LegalPage(
                                     titleRes = key.titleRes,
@@ -1164,4 +1174,10 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object Album : Screen
+
+    @Serializable
+    data object Tide : Screen
+
+    @Serializable
+    data object Moments : Screen
 }
