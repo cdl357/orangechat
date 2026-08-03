@@ -315,11 +315,7 @@ class ProactiveMessageReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         Log.d(ProactiveMessageService.TAG, "=== onReceive triggered at ${System.currentTimeMillis()}, action=${intent.action} ===")
         when (intent.action) {
-            me.rerere.orangechat.PROACTIVE_MESSAGE -> {
-                Log.d(ProactiveMessageService.TAG, "Starting ProactiveMessageTriggerService...")
-                val serviceIntent = Intent(context, ProactiveMessageTriggerService::class.java)
-                context.startForegroundService(serviceIntent)
-            }
+            // AlarmManager broadcast removed in v3 (WorkManager-only)
             Intent.ACTION_BOOT_COMPLETED -> {
                 Log.d(ProactiveMessageService.TAG, "Boot completed, rescheduling proactive message")
                 CoroutineScope(Dispatchers.IO).launch {
