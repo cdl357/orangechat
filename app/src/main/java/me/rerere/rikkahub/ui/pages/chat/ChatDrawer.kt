@@ -76,11 +76,15 @@ import me.rerere.hugeicons.stroke.Image02
 import me.rerere.hugeicons.stroke.InLove
 import me.rerere.hugeicons.stroke.LanguageCircle
 import me.rerere.hugeicons.stroke.LookTop
+import me.rerere.hugeicons.stroke.MessageMultiple01
+import me.rerere.hugeicons.stroke.Notebook01
 import me.rerere.hugeicons.stroke.PencilEdit01
+import me.rerere.hugeicons.stroke.QuillWrite01
 import me.rerere.hugeicons.stroke.Rocket01
 import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Settings03
 import me.rerere.hugeicons.stroke.Sparkles
+import me.rerere.hugeicons.stroke.Tick01
 import me.rerere.hugeicons.stroke.TransactionHistory
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
@@ -276,52 +280,12 @@ fun ChatDrawerContent(
                 drawerItemAlpha = settings.displaySetting.drawerItemAlpha,
             )
 
-            FolderBar(
-                folders = folders,
-                selectedFolderId = selectedFolderId,
-                onSelect = { drawerVm.selectFolder(it) },
-                onCreate = { showCreateFolderDialog = true },
-                onRename = { folderToRename = it },
-                onDelete = { folderToDelete = it },
+            CoupleToolsSection(
+                navController = navController,
+                drawerItemAlpha = settings.displaySetting.drawerItemAlpha,
             )
 
-            ConversationList(
-                current = current,
-                conversations = conversations,
-                conversationJobs = conversationJobs.keys,
-                listState = conversationListState,
-                drawerItemAlpha = settings.displaySetting.drawerItemAlpha,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                onClick = {
-                    navigateToChatPage(navController, it.id)
-                },
-                onRegenerateTitle = {
-                    vm.generateTitle(it, true)
-                },
-                onDelete = {
-                    vm.deleteConversation(it)
-                    // Refresh the conversation list to immediately remove the deleted item
-                    // This fixes the issue where deleted conversations sometimes remain visible
-                    // until manually clicked (issue #747)
-                    conversations.refresh()
-                    if (it.id == current.id) {
-                        navigateToChatPage(navController)
-                    }
-                },
-                onPin = {
-                    vm.updatePinnedStatus(it)
-                },
-                onMoveToAssistant = {
-                    conversationToMove = it
-                    showMoveToAssistantSheet = true
-                },
-                onMoveToFolder = {
-                    conversationToMoveFolder = it
-                    showMoveToFolderSheet = true
-                }
-            )
+            Spacer(Modifier.weight(1f))
 
             // 助手选择器
             AssistantPicker(
@@ -348,28 +312,13 @@ fun ChatDrawerContent(
             )
 
             Row(
-                horizontalArrangement = Arrangement.SpaceAround,
+                horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp)
                     .alpha(settings.displaySetting.drawerItemAlpha)
             ) {
-                DrawerAction(
-                    icon = {
-                        Icon(
-                            imageVector = HugeIcons.LookTop,
-                            contentDescription = stringResource(R.string.assistant_page_title)
-                        )
-                    },
-                    label = {
-                        Text(stringResource(R.string.assistant_page_title))
-                    },
-                    onClick = {
-                        navController.navigate(Screen.Assistant)
-                    },
-                )
-
                 Box {
                     DrawerAction(
                         icon = {
@@ -402,22 +351,6 @@ fun ChatDrawerContent(
                                 navController.navigate(Screen.ImageGen)
                             }
                         )
-                        DropdownMenuItem(
-                            text = { Text("健康数据") },
-                            leadingIcon = { Icon(HugeIcons.Zap, null) },
-                            onClick = {
-                                showMenuPopup = false
-                                navController.navigate(Screen.Health)
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Mini Apps") },
-                            leadingIcon = { Icon(HugeIcons.Rocket01, null) },
-                            onClick = {
-                                showMenuPopup = false
-                                navController.navigate(Screen.MiniAppManager)
-                            }
-                        )
                     }
                 }
 
@@ -444,8 +377,6 @@ fun ChatDrawerContent(
                         navController.navigate(Screen.Stats)
                     },
                 )
-
-                Spacer(Modifier.weight(1f))
 
                 DrawerAction(
                     icon = {
@@ -939,6 +870,54 @@ private fun FolderChip(
         }
     }
 }
+
+@Composable
+private fun CoupleToolsSection(
+    navController: Navigator,
+    drawerItemAlpha: Float = 1f,
+) {
+    data class ToolEntry(val icon: androidx.compose.ui.graphics.vector.ImageVector, val label: String, val route: me.rerere.rikkahub.Screen)
+    val items = listOf(
+        ToolEntry(HugeIcons.Tick01, "待办", me.rerere.rikkahub.Screen.Todo),
+        ToolEntry(HugeIcons.QuillWrite01, "日记", me.rerere.rikkahub.Screen.Diary),
+        ToolEntry(HugeIcons.MessageMultiple01, "留言板", me.rerere.rikkahub.Screen.Bulletin),
+        ToolEntry(HugeIcons.Notebook01, "相册", me.rerere.rikkahub.Screen.Album),
+    )
+    Column(
+        modifier = Modifier.padding(horizontal = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        items.forEach { entry ->
+            Surface(
+                onClick = { navController.navigate(entry.route) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = drawerItemAlpha),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Icon(
+                        imageVector = entry.icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = entry.label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
+        }
+    }
+}
+
 
 @Composable
 private fun AssistantItem(

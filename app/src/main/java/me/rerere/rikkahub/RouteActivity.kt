@@ -168,6 +168,10 @@ import me.rerere.rikkahub.ui.components.ui.EmojiPickerPage
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerPage
 import me.rerere.rikkahub.ui.pages.stats.StatsPage
 import me.rerere.rikkahub.ui.pages.translator.TranslatorPage
+import me.rerere.rikkahub.ui.pages.todo.TodoPage
+import me.rerere.rikkahub.ui.pages.diary.DiaryPage
+import me.rerere.rikkahub.ui.pages.bulletin.BulletinPage
+import me.rerere.rikkahub.ui.pages.album.AlbumPage
  import me.rerere.rikkahub.ui.pages.voice.IncomingCallPage
  import me.rerere.rikkahub.ui.pages.voice.VoiceCallPage
 import me.rerere.rikkahub.service.VoiceCallService
@@ -850,6 +854,22 @@ entry<Screen.Extensions> {
                                 )
                             }
 
+                            entry<Screen.Todo> {
+                                TodoPage()
+                            }
+
+                            entry<Screen.Diary> {
+                                DiaryPage()
+                            }
+
+                            entry<Screen.Bulletin> {
+                                BulletinPage()
+                            }
+
+                            entry<Screen.Album> {
+                                AlbumPage()
+                            }
+
                             entry<Screen.Legal> { key ->
                                 LegalPage(
                                     titleRes = key.titleRes,
@@ -1132,4 +1152,16 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data class Legal(val titleRes: Int, val contentRes: Int) : Screen
+
+    @Serializable
+    data object Todo : Screen
+
+    @Serializable
+    data object Diary : Screen
+
+    @Serializable
+    data object Bulletin : Screen
+
+    @Serializable
+    data object Album : Screen
 }
