@@ -6,6 +6,7 @@
 
 package me.rerere.rikkahub.data.service
 
+import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -314,7 +315,7 @@ class ProactiveMessageReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         Log.d(ProactiveMessageService.TAG, "=== onReceive triggered at ${System.currentTimeMillis()}, action=${intent.action} ===")
         when (intent.action) {
-            ProactiveMessageService.ACTION_PROACTIVE_MESSAGE -> {
+            me.rerere.orangechat.PROACTIVE_MESSAGE -> {
                 Log.d(ProactiveMessageService.TAG, "Starting ProactiveMessageTriggerService...")
                 val serviceIntent = Intent(context, ProactiveMessageTriggerService::class.java)
                 context.startForegroundService(serviceIntent)
