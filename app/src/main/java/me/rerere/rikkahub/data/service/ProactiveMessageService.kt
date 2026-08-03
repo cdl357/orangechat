@@ -6,8 +6,6 @@
 
 package me.rerere.rikkahub.data.service
 
-import android.app.AlarmManager
-import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -94,73 +92,13 @@ class ProactiveMessageService : KoinComponent {
 
     companion object {
         const val TAG = "ProactiveMessageService"
-        const val ACTION_PROACTIVE_MESSAGE = "me.rerere.orangechat.PROACTIVE_MESSAGE"
-        private const val REQUEST_CODE = 10001
 
         internal const val PREFS_NAME = "proactive_message_prefs"
         private const val KEY_NEXT_TRIGGER_TIME = "next_trigger_time"
 
         fun scheduleNext(context: Context, setting: ProactiveMessageSetting) {
-            if (!setting.enabled) {
-                cancel(context)
-                return
-            }
-
-            val minMinutes = setting.minIntervalMinutes.coerceAtLeast(1)
-            val maxMinutes = setting.maxIntervalMinutes.coerceAtLeast(minMinutes)
-            val delayMinutes = Random.nextInt(minMinutes, maxMinutes + 1)
-            val triggerTime = java.lang.System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(delayMinutes.toLong())
-
-            // 保存下次触发时间到SharedPreferences
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .edit()
-                .putLong(KEY_NEXT_TRIGGER_TIME, triggerTime)
-                .apply()
-
-            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            val intent = Intent(context, ProactiveMessageReceiver::class.java).apply {
-                action = ACTION_PROACTIVE_MESSAGE
-            }
-            val pendingIntent = PendingIntent.getBroadcast(
-                context,
-                REQUEST_CODE,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                // Android 12+ needs canScheduleExactAlarms() check
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    if (alarmManager.canScheduleExactAlarms()) {
-                        alarmManager.setExactAndAllowWhileIdle(
-                            AlarmManager.RTC_WAKEUP,
-                            triggerTime,
-                            pendingIntent
-                        )
-                    } else {
-                        // Fallback: use inexact alarm if exact alarm permission not granted
-                        alarmManager.setAndAllowWhileIdle(
-                            AlarmManager.RTC_WAKEUP,
-                            triggerTime,
-                            pendingIntent
-                        )
-                        Log.w(TAG, "Exact alarm permission not granted, using inexact alarm")
-                    }
-                } else {
-                    alarmManager.setExactAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP,
-                        triggerTime,
-                        pendingIntent
-                    )
-                }
-            } else {
-                alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
-            }
-
-            Log.d(TAG, "Scheduled proactive message in $delayMinutes minutes, trigger at ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(triggerTime))}")
-
-            // Also schedule via WorkManager as a more reliable fallback
-            ProactiveMessageWorker.scheduleNext(context, setting)
+            // v3: WorkManager-only, no AlarmManager (fixes duplicate message issue)
+            ProactiveMessageWorker.scheduleNext(context, setting, forceReplace = true)
         }
 
         fun getNextTriggerTime(context: Context): Long? {
@@ -170,29 +108,12 @@ class ProactiveMessageService : KoinComponent {
         }
 
         fun cancel(context: Context) {
-            // 清除保存的触发时间
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .edit()
                 .remove(KEY_NEXT_TRIGGER_TIME)
                 .apply()
-
-            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            val intent = Intent(context, ProactiveMessageReceiver::class.java).apply {
-                action = ACTION_PROACTIVE_MESSAGE
-            }
-            val pendingIntent = PendingIntent.getBroadcast(
-                context,
-                REQUEST_CODE,
-                intent,
-                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
-            )
-            pendingIntent?.let {
-                alarmManager.cancel(it)
-                Log.d(TAG, "Cancelled proactive message alarm")
-            }
-
-            // Also cancel WorkManager fallback
             ProactiveMessageWorker.cancel(context)
+            Log.d(TAG, "Cancelled proactive message")
         }
 
         fun resetTimer(context: Context, setting: ProactiveMessageSetting) {
