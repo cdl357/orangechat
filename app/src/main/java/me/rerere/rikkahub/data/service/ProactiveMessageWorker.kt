@@ -77,7 +77,28 @@ class ProactiveMessageWorker(
             WorkManager.getInstance(context).cancelUniqueWork(UNIQUE_WORK_NAME)
             // 同时取消旧版本的 work name（防止旧版和新版同时跑）
             WorkManager.getInstance(context).cancelUniqueWork("proactive_message_work")
-            Log.d(TAG, "Cancelled proactive message workers")
+Log.d(TAG, "Cancelled proactive message workers")
+        }
+
+        /**
+         * Check if exact alarm permission is granted (Android 12+)
+         * Kept for UI compatibility (SettingProactiveMessagePage references this)
+         */
+        fun canScheduleExactAlarms(context: Context): Boolean {
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) {
+                return true
+            }
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+            return alarmManager.canScheduleExactAlarms()
+        }
+
+        /**
+         * Check if app is ignoring battery optimizations
+         * Kept for UI compatibility (SettingProactiveMessagePage references this)
+         */
+        fun isIgnoringBatteryOptimizations(context: Context): Boolean {
+            val powerManager = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            return powerManager.isIgnoringBatteryOptimizations(context.packageName)
         }
     }
 
