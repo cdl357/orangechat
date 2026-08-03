@@ -24,7 +24,7 @@ interface DiaryDAO {
     @Query("SELECT * FROM diary_entry WHERE date_group = :date ORDER BY created_at DESC")
     suspend fun getByDate(date: String): List<DiaryEntity>
 
-    @Query("SELECT DISTINCT date_group FROM diary_entry WHERE date_group !=  ORDER BY date_group DESC")
+    @Query("SELECT DISTINCT date_group FROM diary_entry WHERE date_group != '' ORDER BY date_group DESC")
     fun observeDates(): Flow<List<String>>
 
     @Query("SELECT * FROM diary_entry WHERE id = :id")
