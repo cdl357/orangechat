@@ -30,8 +30,10 @@ import me.rerere.rikkahub.data.db.entity.MemoryBankEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEntity
 import me.rerere.rikkahub.data.db.entity.MessageNodeEntity
 import me.rerere.rikkahub.data.db.entity.SshHostEntity
+import me.rerere.rikkahub.data.db.entity.TodoEntity
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.db.dao.SshHostDao
+import me.rerere.rikkahub.data.db.dao.TodoDAO
 import me.rerere.rikkahub.data.security.SecurityAuditDao
 import me.rerere.rikkahub.data.security.SecurityAuditEntity
 import me.rerere.rikkahub.workflow.db.WorkflowDao
@@ -58,8 +60,9 @@ import me.rerere.rikkahub.utils.JsonInstant
         WorkflowRunEntity::class,
         SshHostEntity::class,
         SecurityAuditEntity::class,
+        TodoEntity::class,
     ],
-    version = 29,
+    version = 30,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -78,6 +81,7 @@ import me.rerere.rikkahub.utils.JsonInstant
         AutoMigration(from = 26, to = 27),
         AutoMigration(from = 27, to = 28),
         AutoMigration(from = 28, to = 29),
+        AutoMigration(from = 29, to = 30),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -107,6 +111,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun sshHostDao(): SshHostDao
 
     abstract fun securityAuditDao(): SecurityAuditDao
+
+    abstract fun todoDao(): TodoDAO
 }
 
 object TokenUsageConverter {
