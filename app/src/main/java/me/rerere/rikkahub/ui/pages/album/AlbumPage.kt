@@ -106,8 +106,7 @@ fun AlbumPage(vm: AlbumVM = koinViewModel()) {
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        "还没有图片
-点 + 从相册导入，或由 Sean 保存对话截图",
+                        "还没有图片\n点 + 从相册导入，或由 Sean 保存对话截图",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
