@@ -32,10 +32,14 @@ import me.rerere.rikkahub.data.db.entity.MessageNodeEntity
 import me.rerere.rikkahub.data.db.entity.SshHostEntity
 import me.rerere.rikkahub.data.db.entity.TodoEntity
 import me.rerere.rikkahub.data.db.entity.BulletinEntity
+import me.rerere.rikkahub.data.db.entity.DiaryEntity
+import me.rerere.rikkahub.data.db.entity.AlbumEntity
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.db.dao.SshHostDao
 import me.rerere.rikkahub.data.db.dao.TodoDAO
 import me.rerere.rikkahub.data.db.dao.BulletinDAO
+import me.rerere.rikkahub.data.db.dao.DiaryDAO
+import me.rerere.rikkahub.data.db.dao.AlbumDAO
 import me.rerere.rikkahub.data.security.SecurityAuditDao
 import me.rerere.rikkahub.data.security.SecurityAuditEntity
 import me.rerere.rikkahub.workflow.db.WorkflowDao
@@ -64,8 +68,10 @@ import me.rerere.rikkahub.utils.JsonInstant
         SecurityAuditEntity::class,
         TodoEntity::class,
         BulletinEntity::class,
+        DiaryEntity::class,
+        AlbumEntity::class,
     ],
-    version = 31,
+    version = 33,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -86,6 +92,8 @@ import me.rerere.rikkahub.utils.JsonInstant
         AutoMigration(from = 28, to = 29),
         AutoMigration(from = 29, to = 30),
         AutoMigration(from = 30, to = 31),
+        AutoMigration(from = 31, to = 32),
+        AutoMigration(from = 32, to = 33),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -119,6 +127,10 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun todoDao(): TodoDAO
 
     abstract fun bulletinDao(): BulletinDAO
+
+    abstract fun diaryDao(): DiaryDAO
+
+    abstract fun albumDao(): AlbumDAO
 }
 
 object TokenUsageConverter {

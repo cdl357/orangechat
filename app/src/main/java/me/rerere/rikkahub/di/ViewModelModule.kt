@@ -35,6 +35,8 @@ import me.rerere.rikkahub.ui.pages.translator.TranslatorVM
 import me.rerere.rikkahub.workflow.ui.WorkflowsViewModel
 import me.rerere.rikkahub.ui.pages.todo.TodoVM
 import me.rerere.rikkahub.ui.pages.bulletin.BulletinVM
+import me.rerere.rikkahub.ui.pages.diary.DiaryVM
+import me.rerere.rikkahub.ui.pages.album.AlbumVM
 import org.koin.core.module.dsl.viewModel
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
@@ -94,4 +96,6 @@ val viewModelModule = module {
     viewModelOf(::SecurityAuditVM)
     viewModelOf(::TodoVM)
     viewModelOf(::BulletinVM)
+    viewModelOf(::DiaryVM)
+    viewModelOf(::AlbumVM)
 }
