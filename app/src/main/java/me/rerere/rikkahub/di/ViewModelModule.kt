@@ -37,6 +37,7 @@ import me.rerere.rikkahub.ui.pages.todo.TodoVM
 import me.rerere.rikkahub.ui.pages.bulletin.BulletinVM
 import me.rerere.rikkahub.ui.pages.diary.DiaryVM
 import me.rerere.rikkahub.ui.pages.album.AlbumVM
+import me.rerere.rikkahub.ui.pages.love.LoveVM
 import org.koin.core.module.dsl.viewModel
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
@@ -98,4 +99,5 @@ val viewModelModule = module {
     viewModelOf(::BulletinVM)
     viewModelOf(::DiaryVM)
     viewModelOf(::AlbumVM)
+    viewModelOf(::LoveVM)
 }

@@ -87,6 +87,7 @@ import me.rerere.hugeicons.stroke.Sparkles
 import me.rerere.hugeicons.stroke.Tick01
 import me.rerere.hugeicons.stroke.Sun01
 import me.rerere.hugeicons.stroke.MusicNote02
+
 import me.rerere.hugeicons.stroke.TransactionHistory
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
@@ -886,6 +887,7 @@ private fun CoupleToolsSection(
         ToolEntry(HugeIcons.Notebook01, "相册", me.rerere.rikkahub.Screen.Album),
         ToolEntry(HugeIcons.Sun01, "潮汐", me.rerere.rikkahub.Screen.Tide),
         ToolEntry(HugeIcons.MusicNote02, "朋友圈", me.rerere.rikkahub.Screen.Moments),
+        ToolEntry(HugeIcons.InLove, "我们", me.rerere.rikkahub.Screen.Love),
     )
     Column(
         modifier = Modifier.padding(horizontal = 4.dp),

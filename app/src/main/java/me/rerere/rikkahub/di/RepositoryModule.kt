@@ -21,6 +21,7 @@ import me.rerere.rikkahub.data.repository.TodoRepository
 import me.rerere.rikkahub.data.repository.BulletinRepository
 import me.rerere.rikkahub.data.repository.DiaryRepository
 import me.rerere.rikkahub.data.repository.AlbumRepository
+import me.rerere.rikkahub.data.repository.LoveDateRepository
 import me.rerere.rikkahub.data.security.SecurityAuditRepository
 import me.rerere.workspace.ProotShellRunner
 import me.rerere.workspace.RootfsInstaller
@@ -117,6 +118,11 @@ val repositoryModule = module {
     single {
         AlbumRepository(
             get<me.rerere.rikkahub.data.db.AppDatabase>().albumDao()
+        )
+    }
+    single {
+        LoveDateRepository(
+            get<me.rerere.rikkahub.data.db.AppDatabase>().loveDateDao()
         )
     }
 }
