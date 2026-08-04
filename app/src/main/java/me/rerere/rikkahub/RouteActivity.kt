@@ -880,7 +880,7 @@ entry<Screen.Extensions> {
                             entry<Screen.Moments> {
                                 MomentsPage()
                             }
-\n                            entry<Screen.Love> {
+                            entry<Screen.Love> {
                                 LovePage()
                             }
 

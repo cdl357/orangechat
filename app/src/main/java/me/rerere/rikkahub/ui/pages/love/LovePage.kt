@@ -4,15 +4,11 @@
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
  */
 package me.rerere.rikkahub.ui.pages.love
-import me.rerere.rikkahub.ui.pages.love.LoveVM
 
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,9 +17,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,14 +36,12 @@ import androidx.compose.ui.window.Dialog
 
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
-import kotlinx.coroutines.Dispatchers
 
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.db.entity.LoveDateEntity
 import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.Add01
+import me.rerere.hugeicons.stroke.Cancel01
 import org.json.JSONObject
 import org.koin.androidx.compose.koinViewModel
 import java.io.File
@@ -344,7 +335,7 @@ fun LovePage() {
                             )
                     ) {
                         Icon(
-                            Icons.Default.Add,
+                            HugeIcons.Add01,
                             contentDescription = "添加",
                             tint = AccentBlue,
                             modifier = Modifier.size(16.dp),
@@ -532,7 +523,7 @@ private fun DateItem(
                 modifier = Modifier.size(28.dp).padding(start = 4.dp)
             ) {
                 Icon(
-                    Icons.Default.Close,
+                    HugeIcons.Cancel01,
                     contentDescription = "删除",
                     tint = TextMuted,
                     modifier = Modifier.size(14.dp),
