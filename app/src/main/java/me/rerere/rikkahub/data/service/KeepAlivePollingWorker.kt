@@ -169,7 +169,7 @@ class KeepAlivePollingWorker(
                 intent,
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
-            sendNotification(
+            applicationContext.sendNotification(
                 channelId = CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID,
                 notificationId = 9901
             ) {
