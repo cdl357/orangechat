@@ -269,7 +269,7 @@ fun LovePage() {
                         .padding(bottom = 12.dp),
                     shape = RoundedCornerShape(18.dp),
                     colors = CardDefaults.cardColors(containerColor = CardBg),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 ) {
                     Box(modifier = Modifier.padding(16.dp, 14.dp)) {
                         Column {
@@ -316,7 +316,8 @@ fun LovePage() {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 22.dp, vertical = 4.dp),
+                        .padding(horizontal = 22.dp)
+                        .padding(top = 16.dp, bottom = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -394,7 +395,7 @@ private fun AvatarCircle(
         modifier = Modifier
             .size(76.dp)
             .clip(CircleShape)
-            .border(3.dp, Color.White, CircleShape)
+            .border(2.dp, Color.White.copy(alpha = 0.6f), CircleShape)
             .clickable { onClick() },
         contentAlignment = Alignment.Center,
     ) {
@@ -426,7 +427,7 @@ private fun AvatarCircle(
                 )
             }
         }
-        // 头像无常驻文字覆盖，点击即可更换
+
     }
 }
 
@@ -454,7 +455,7 @@ private fun DateItem(
             .padding(horizontal = 20.dp, vertical = 4.dp),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = CardBg),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Row(
             modifier = Modifier
