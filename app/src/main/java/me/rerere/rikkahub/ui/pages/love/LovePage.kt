@@ -426,23 +426,7 @@ private fun AvatarCircle(
                 )
             }
         }
-        // 点击蒙层提示（仅底部小标签，无灰色蒙层）
-        Box(
-            modifier = Modifier
-                .fillMaxSize(),
-            contentAlignment = Alignment.BottomCenter,
-        ) {
-            Text(
-                text = "换头像",
-                fontSize = 9.sp,
-                color = Color.White,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0x66000000))
-                    .padding(vertical = 2.dp),
-                textAlign = TextAlign.Center,
-            )
-        }
+        // 头像无常驻文字覆盖，点击即可更换
     }
 }
 
