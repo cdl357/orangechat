@@ -288,31 +288,13 @@ private fun PostMomentDialog(
         onDismissRequest = onDismiss,
         title = { Text("发动态") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    value = content,
-                    onValueChange = { content = it },
-                    label = { Text("说点什么...") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 3,
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text("发布身份：", style = MaterialTheme.typography.bodySmall)
-                    Surface(
-                        onClick = { author = "yuri" },
-                        shape = RoundedCornerShape(20.dp),
-                        color = if (author == "yuri") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
-                    ) { Text("Yuri", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium) }
-                    Surface(
-                        onClick = { author = "sean" },
-                        shape = RoundedCornerShape(20.dp),
-                        color = if (author == "sean") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
-                    ) { Text("Sean", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium) }
-                }
-            }
+            OutlinedTextField(
+                value = content,
+                onValueChange = { content = it },
+                label = { Text("说点什么...") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+            )
         },
         confirmButton = {
             FilledTonalButton(onClick = { onConfirm(content, author) }, enabled = content.isNotBlank()) {
