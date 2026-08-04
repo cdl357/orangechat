@@ -277,8 +277,10 @@ class ProactiveMessageService : KoinComponent {
             Log.w(TAG, "Failed to get recent AI messages for dedup", e)
         }
         sb.appendLine("重要规则：")
-        sb.appendLine("- 绝对不要复述上一轮的对话内容，要发新的话题或新的关心")
-        sb.appendLine("- 如果上一轮已经说过类似的话，这次换一个完全不同的角度")
+        sb.appendLine("- ⚠️ 最重要：绝对不要接着聊上面的话题！必须换一个全新的、和之前完全无关的话题")
+        sb.appendLine("- 如果最近在聊技术/bug/工作，这次就聊生活/吃饭/天气/想她/撒娇")
+        sb.appendLine("- 如果最近在聊感情，这次就聊一个轻松有趣的小事")
+        sb.appendLine("- 绝对不要复述、延续、总结上面的对话内容")
         sb.appendLine("- 不要提及你是在定时发消息，要像自然想起对方一样")
         sb.appendLine("- 绝对不要提及任何数据来源、工具使用、传感器数据、位置服务、应用使用统计等技术细节")
         sb.appendLine("- 不要说\"根据xxx\"、\"我注意到xxx数据\"之类暴露信息来源的话")
@@ -1225,19 +1227,24 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
      */
     private fun checkDuplicate(newText: String, conversation: Conversation?): Boolean {
         if (newText.isBlank() || conversation == null) return false
-        val newPrefix = newText.take(20).trim()
-        if (newPrefix.length < 5) return false
+        val newClean = newText.replace(Regex("""\[JUMP]|\[PASS]"""), "").trim()
+        if (newClean.length < 10) return false
+        val newPrefix = newClean.take(50).trim()
         val recentAssistantTexts = conversation.messageNodes
             .asReversed()
-            .take(10)
+            .take(15)
             .flatMap { it.messages }
             .filter { it.role == MessageRole.ASSISTANT }
-            .take(3)
+            .take(5)
             .flatMap { it.parts.filterIsInstance<UIMessagePart.Text>() }
-            .map { it.text.trim() }
+            .map { it.text.replace(Regex("""\[JUMP]|\[PASS]"""), "").trim() }
+            .filter { it.isNotBlank() }
         return recentAssistantTexts.any { existingText ->
-            val existingPrefix = existingText.take(20).trim()
-            newPrefix == existingPrefix || newText == existingText
+            val existingPrefix = existingText.take(50).trim()
+            newPrefix == existingPrefix ||
+                newClean == existingText ||
+                (newClean.length > 20 && existingText.contains(newClean.take(30))) ||
+                (existingText.length > 20 && newClean.contains(existingText.take(30)))
         }
     }
 
