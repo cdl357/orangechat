@@ -157,9 +157,11 @@ fun LovePage() {
                         .padding(top = 16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
+                    Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
                         // Sean 头像
                         AvatarCircle(
@@ -424,11 +426,10 @@ private fun AvatarCircle(
                 )
             }
         }
-        // 点击蒙层提示
+        // 点击蒙层提示（仅底部小标签，无灰色蒙层）
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0x22000000)),
+                .fillMaxSize(),
             contentAlignment = Alignment.BottomCenter,
         ) {
             Text(
@@ -437,7 +438,7 @@ private fun AvatarCircle(
                 color = Color.White,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0x44000000))
+                    .background(Color(0x66000000))
                     .padding(vertical = 2.dp),
                 textAlign = TextAlign.Center,
             )
