@@ -537,6 +537,7 @@ private fun DateItem(
 }
 
 
+@Composable
 private fun AddDateDialog(
     onDismiss: () -> Unit,
     onConfirm: (label: String, dateStr: String) -> Unit,
