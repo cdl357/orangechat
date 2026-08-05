@@ -207,8 +207,7 @@ fun buildCoupleTools(
             List photos saved in the shared album, most recent first.
             Use this before sharing an old photo — to recall what you have and pick one that fits
             the moment (e.g. when you miss her, or a memory surfaces naturally in conversation).
-        """.trimIndent().replace("
-", " "),
+        """.trimIndent().replace("\n", " "),
         parameters = {
             InputSchema.Obj(
                 properties = buildJsonObject {
@@ -249,8 +248,7 @@ fun buildCoupleTools(
             Use this when a memory naturally surfaces — not on a schedule, but when you genuinely
             feel like sharing it right now (e.g. missing her, or something reminded you of it).
             Call list_album_photos first if you need to recall what's available.
-        """.trimIndent().replace("
-", " "),
+        """.trimIndent().replace("\n", " "),
         parameters = {
             InputSchema.Obj(
                 properties = buildJsonObject {
