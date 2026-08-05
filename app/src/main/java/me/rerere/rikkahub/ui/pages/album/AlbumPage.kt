@@ -5,35 +5,30 @@
  */
 package me.rerere.rikkahub.ui.pages.album
 
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,155 +36,204 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.compose.rememberAsyncImagePainter
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
 import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Image02
 import me.rerere.rikkahub.data.db.entity.AlbumEntity
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import org.koin.androidx.compose.koinViewModel
 import java.io.File
-import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+// ── 拍立得配色 ──────────────────────────────────────────────
+private val AlbumBgTop = Color(0xFFF5FBFD)
+private val AlbumBgBottom = Color(0xFFE8F4F8)
+private val AccentBlue = Color(0xFF6A9AAA)
+private val TextMain = Color(0xFF4A6A7A)
+private val TextSub = Color(0xFF8AB4C4)
+private val TagBg = Color(0xFFD8EEF4)
+private val TagBgActive = Color(0xFF7AB4C4)
+private val TimelineDot = Color(0xFF7AB4C4)
+private val TimelineLine = Color(0xFFC8E4EC)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlbumPage(vm: AlbumVM = koinViewModel()) {
     val items by vm.allItems.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-    var previewItem by remember { mutableStateOf<AlbumEntity?>(null) }
 
-    // 图片选择器：从相册导入
-    val imagePicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            // 把图片复制到 app 私有目录以免被清除
-            val dest = File(context.filesDir, "album/${System.currentTimeMillis()}.jpg")
-            dest.parentFile?.mkdirs()
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(dest).use { output -> input.copyTo(output) }
-            }
-            vm.saveImage(filePath = dest.absolutePath, savedBy = "yuri")
+    // 按 yyyy年M月 分组
+    val grouped = remember(items) {
+        items.groupBy { item ->
+            SimpleDateFormat("yyyy年 M月", Locale.CHINA).format(Date(item.createdAt))
         }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("相册") },
+                title = {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text("相册")
+                        Text("${items.size} 张", fontSize = 12.sp, color = TextSub)
+                    }
+                },
                 navigationIcon = { BackButton() },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = AlbumBgTop),
             )
         },
+        containerColor = AlbumBgTop,
         floatingActionButton = {
-            FloatingActionButton(onClick = { imagePicker.launch("image/*") }) {
-                Icon(HugeIcons.Image02, contentDescription = "导入图片")
+            FloatingActionButton(
+                onClick = { },
+                containerColor = Color(0xFF6AB4C8),
+                contentColor = Color.White,
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+            ) {
+                Icon(HugeIcons.Image02, contentDescription = "相册")
             }
         }
     ) { padding ->
-        if (items.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        HugeIcons.Image02, null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        "还没有图片\n点 + 从相册导入，或由 Sean 保存对话截图",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .background(Brush.verticalGradient(listOf(AlbumBgTop, AlbumBgBottom)))
+        ) {
+            if (items.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("还没有图片，点 + 从相册导入，或由 Sean 保存对话截图", color = TextSub, fontSize = 13.sp)
                 }
-            }
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = PaddingValues(4.dp),
-                horizontalArrangement = Arrangement.spacedBy(3.dp),
-                verticalArrangement = Arrangement.spacedBy(3.dp)
-            ) {
-                items(items, key = { it.id }) { item ->
-                    AlbumThumbnail(
-                        item = item,
-                        onClick = { previewItem = item }
-                    )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 16.dp, bottom = 100.dp),
+                ) {
+                    // 分类标签行（静态展示，仅视觉）
+                    item {
+                        Row(
+                            modifier = Modifier.padding(bottom = 20.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            AlbumTag("全部", true)
+                            AlbumTag("Sean 保存的", false)
+                            AlbumTag("Yuri 保存的", false)
+                        }
+                    }
+                    grouped.forEach { (dateLabel, photos) ->
+                        item {
+                            Row(
+                                modifier = Modifier.padding(bottom = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .width(10.dp)
+                                        .height(10.dp)
+                                        .background(TimelineDot, CircleShape)
+                                )
+                                Spacer(Modifier.width(16.dp))
+                                Text(dateLabel, fontSize = 13.sp, color = TextMain, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
+                            }
+                        }
+                        item {
+                            FlowRow(
+                                modifier = Modifier.padding(start = 36.dp, bottom = 24.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                photos.forEach { photo ->
+                                    PolaroidCard(photo)
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
+}
 
-    previewItem?.let { item ->
-        AlertDialog(
-            onDismissRequest = { previewItem = null },
-            title = {
-                if (item.caption.isNotBlank()) Text(item.caption)
-            },
-            text = {
-                Image(
-                    painter = rememberAsyncImagePainter(item.filePath),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxWidth(),
-                    contentScale = ContentScale.Fit
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { previewItem = null }) { Text("关闭") }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    vm.delete(item)
-                    previewItem = null
-                }) {
-                    Icon(HugeIcons.Delete01, null, modifier = Modifier.size(16.dp))
-                    Text("删除")
-                }
-            }
+@Composable
+private fun AlbumTag(label: String, active: Boolean) {
+    Surface(
+        color = if (active) TagBgActive else TagBg,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+    ) {
+        Text(
+            label,
+            fontSize = 12.sp,
+            color = if (active) Color.White else AccentBlue,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
         )
     }
 }
 
 @Composable
-private fun AlbumThumbnail(item: AlbumEntity, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(4.dp),
-        modifier = Modifier.aspectRatio(1f)
+private fun PolaroidCard(photo: AlbumEntity) {
+    val rotation = remember(photo.id) { if (photo.id % 2 == 0) 2f else -2f }
+    val dateStr = remember(photo.createdAt) {
+        SimpleDateFormat("M/d", Locale.CHINA).format(Date(photo.createdAt))
+    }
+
+    Column(
+        modifier = Modifier
+            .width(150.dp)
+            .rotate(rotation)
+            .background(Color.White)
+            .padding(8.dp, 8.dp, 8.dp, 12.dp),
     ) {
-        Box {
-            Image(
-                painter = rememberAsyncImagePainter(item.filePath),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
-            if (item.savedBy == "sean") {
-                Text(
-                    "S",
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(4.dp)
-                        .background(
-                            Color.Black.copy(alpha = 0.4f),
-                            RoundedCornerShape(4.dp)
-                        )
-                        .padding(horizontal = 4.dp, vertical = 1.dp),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(120.dp)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
+                .background(Brush.linearGradient(listOf(Color(0xFFE8F4F8), Color(0xFFD8EEF4)))),
+            contentAlignment = Alignment.Center,
+        ) {
+            val file = remember(photo.filePath) { File(photo.filePath) }
+            if (photo.filePath.isNotBlank() && file.exists()) {
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current).data(file).build(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
                 )
+            } else {
+                Text("🖼️", fontSize = 32.sp)
             }
         }
+        Spacer(Modifier.height(8.dp))
+        if (photo.caption.isNotBlank()) {
+            Text(
+                photo.caption,
+                fontSize = 10.sp,
+                color = AccentBlue,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 2,
+            )
+        }
+        Text(
+            dateStr,
+            fontSize = 9.sp,
+            color = Color(0xFFA0C4D0),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
