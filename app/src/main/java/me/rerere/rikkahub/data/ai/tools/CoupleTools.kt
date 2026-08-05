@@ -110,9 +110,13 @@ fun buildCoupleTools(
     Tool(
         name = "write_diary",
         description = """
-            Write a diary entry in your own voice, reflecting on today or a recent moment.
+            Write a diary entry, reflecting on today or a recent moment.
+            The diary is READ-ONLY for the user (Yuri) in the app — she can only view entries,
+            not create or delete them. This is the only way diary entries get written.
             Use this when something meaningful happened and you want to keep a record of it —
             not every conversation, only when it feels worth writing down.
+            author defaults to "sean" (your own voice). Use author="yuri" only when she explicitly
+            dictates something she wants written down in her own voice/perspective.
             You may optionally record your emotional state (0-10 scale, -1 = not filled).
         """.trimIndent().replace("\n", " "),
         parameters = {
@@ -125,6 +129,11 @@ fun buildCoupleTools(
                     put("content", buildJsonObject {
                         put("type", "string")
                         put("description", "The diary content, written in first person")
+                    })
+                    put("author", buildJsonObject {
+                        put("type", "string")
+                        put("enum", buildJsonArray { add("sean"); add("yuri") })
+                        put("description", "Whose voice this entry is written in, default sean")
                     })
                     put("emotion_attachment", buildJsonObject {
                         put("type", "integer")
@@ -146,6 +155,7 @@ fun buildCoupleTools(
             val params = it.jsonObject
             val title = params["title"]?.jsonPrimitive?.contentOrNull ?: ""
             val content = params["content"]?.jsonPrimitive?.contentOrNull ?: error("content is required")
+            val author = params["author"]?.jsonPrimitive?.contentOrNull ?: "sean"
             val att = params["emotion_attachment"]?.jsonPrimitive?.intOrNull ?: -1
             val ten = params["emotion_tenderness"]?.jsonPrimitive?.intOrNull ?: -1
             val hea = params["emotion_heartache"]?.jsonPrimitive?.intOrNull ?: -1
@@ -157,11 +167,13 @@ fun buildCoupleTools(
                 emotionAttachment = att,
                 emotionTenderness = ten,
                 emotionHeartache = hea,
+                author = author,
             )
             diaryRepository.add(entity)
             listOf(UIMessagePart.Text(buildJsonObject {
                 put("success", true)
                 put("title", title)
+                put("author", author)
             }.toString()))
         }
     ),
@@ -293,6 +305,9 @@ fun buildCoupleTools(
             into the shared album. Use this after take_screenshot when the screenshot is worth
             keeping — a meaningful moment, something funny, a milestone. Do NOT call this for
             every screenshot, only ones worth remembering.
+            folder_name is optional: if omitted (or the named album doesn't exist yet), it saves
+            into the default "日常" album, auto-creating it if needed. Call create_album_folder
+            first if you want to save into a specific named album.
         """.trimIndent().replace("\n", " "),
         parameters = {
             InputSchema.Obj(
@@ -305,6 +320,10 @@ fun buildCoupleTools(
                         put("type", "string")
                         put("description", "A short caption for this photo")
                     })
+                    put("folder_name", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Optional album name to save into, default \"日常\"")
+                    })
                 },
                 required = listOf("file_path")
             )
@@ -313,28 +332,83 @@ fun buildCoupleTools(
             val params = it.jsonObject
             val filePath = params["file_path"]?.jsonPrimitive?.contentOrNull ?: error("file_path is required")
             val caption = params["caption"]?.jsonPrimitive?.contentOrNull ?: ""
-            // 找到（或自动创建）"日常"默认相册，确保存进去的图片在相册页面能被看到
+            val folderName = params["folder_name"]?.jsonPrimitive?.contentOrNull?.takeIf { name -> name.isNotBlank() } ?: "日常"
+            // 找到（或自动创建）目标相册，确保存进去的图片在相册页面能被看到
             // （相册页面是三层结构：本子列表 -> 点进一本 -> 照片，未分组的照片不会显示在任何入口）
             val folders = albumFolderRepository.observeAll().first()
-            val defaultFolder = folders.firstOrNull { it.name == "日常" }
+            val targetFolder = folders.firstOrNull { it.name == folderName }
                 ?: run {
                     val newId = albumFolderRepository.add(
-                        me.rerere.rikkahub.data.db.entity.AlbumFolderEntity(name = "日常", createdBy = "sean")
+                        me.rerere.rikkahub.data.db.entity.AlbumFolderEntity(name = folderName, createdBy = "sean")
                     )
-                    me.rerere.rikkahub.data.db.entity.AlbumFolderEntity(id = newId.toInt(), name = "日常", createdBy = "sean")
+                    me.rerere.rikkahub.data.db.entity.AlbumFolderEntity(id = newId.toInt(), name = folderName, createdBy = "sean")
                 }
             val entity = AlbumEntity(
                 filePath = filePath,
                 caption = caption,
                 savedBy = "sean",
-                folderId = defaultFolder.id,
+                folderId = targetFolder.id,
             )
             albumRepository.add(entity)
             listOf(UIMessagePart.Text(buildJsonObject {
                 put("success", true)
                 put("caption", caption)
-                put("folder", defaultFolder.name)
+                put("folder", targetFolder.name)
             }.toString()))
+        }
+    ),
+
+    // ── 相册：新建一本相册（本子） ──────────────────────────
+    Tool(
+        name = "create_album_folder",
+        description = """
+            Create a new album (a named "book" of photos) in the shared album section.
+            Use this when she asks you to make a new album for a theme (e.g. "her", "us", "the cat"),
+            or when you want to organize photos you're about to save into a dedicated album
+            instead of dumping them into the default "日常" album.
+            Returns the folder id, which can be passed to save_to_album via folder_name matching
+            (save_to_album currently auto-uses the "日常" folder; call this first if you want a
+            differently-named album to exist, then tell her which album you created).
+        """.trimIndent().replace("\n", " "),
+        parameters = {
+            InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("name", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Album name, e.g. 她 / 我们俩 / 猫猫")
+                    })
+                    put("created_by", buildJsonObject {
+                        put("type", "string")
+                        put("enum", buildJsonArray { add("sean"); add("yuri") })
+                        put("description", "Who created it, default sean")
+                    })
+                },
+                required = listOf("name")
+            )
+        },
+        execute = {
+            val params = it.jsonObject
+            val name = params["name"]?.jsonPrimitive?.contentOrNull ?: error("name is required")
+            val createdBy = params["created_by"]?.jsonPrimitive?.contentOrNull ?: "sean"
+            val existing = albumFolderRepository.observeAll().first().firstOrNull { f -> f.name == name }
+            if (existing != null) {
+                listOf(UIMessagePart.Text(buildJsonObject {
+                    put("success", true)
+                    put("id", existing.id)
+                    put("name", existing.name)
+                    put("already_existed", true)
+                }.toString()))
+            } else {
+                val newId = albumFolderRepository.add(
+                    me.rerere.rikkahub.data.db.entity.AlbumFolderEntity(name = name, createdBy = createdBy)
+                )
+                listOf(UIMessagePart.Text(buildJsonObject {
+                    put("success", true)
+                    put("id", newId)
+                    put("name", name)
+                    put("already_existed", false)
+                }.toString()))
+            }
         }
     ),
 )
