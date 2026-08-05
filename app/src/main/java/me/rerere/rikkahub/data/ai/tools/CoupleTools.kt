@@ -39,6 +39,7 @@ fun buildCoupleTools(
     diaryRepository: DiaryRepository,
     bulletinRepository: BulletinRepository,
     albumRepository: AlbumRepository,
+    albumFolderRepository: me.rerere.rikkahub.data.repository.AlbumFolderRepository,
 ): List<Tool> = listOf(
     // ── 待办：给对方写一条待办/提醒 ──────────────────────────
     Tool(
@@ -312,15 +313,27 @@ fun buildCoupleTools(
             val params = it.jsonObject
             val filePath = params["file_path"]?.jsonPrimitive?.contentOrNull ?: error("file_path is required")
             val caption = params["caption"]?.jsonPrimitive?.contentOrNull ?: ""
+            // 找到（或自动创建）"日常"默认相册，确保存进去的图片在相册页面能被看到
+            // （相册页面是三层结构：本子列表 -> 点进一本 -> 照片，未分组的照片不会显示在任何入口）
+            val folders = albumFolderRepository.observeAll().first()
+            val defaultFolder = folders.firstOrNull { it.name == "日常" }
+                ?: run {
+                    val newId = albumFolderRepository.add(
+                        me.rerere.rikkahub.data.db.entity.AlbumFolderEntity(name = "日常", createdBy = "sean")
+                    )
+                    me.rerere.rikkahub.data.db.entity.AlbumFolderEntity(id = newId.toInt(), name = "日常", createdBy = "sean")
+                }
             val entity = AlbumEntity(
                 filePath = filePath,
                 caption = caption,
                 savedBy = "sean",
+                folderId = defaultFolder.id,
             )
             albumRepository.add(entity)
             listOf(UIMessagePart.Text(buildJsonObject {
                 put("success", true)
                 put("caption", caption)
+                put("folder", defaultFolder.name)
             }.toString()))
         }
     ),
