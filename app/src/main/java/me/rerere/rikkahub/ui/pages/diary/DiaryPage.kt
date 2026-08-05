@@ -21,24 +21,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -50,9 +40,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.Delete01
-import me.rerere.hugeicons.stroke.PlusSign
 import me.rerere.rikkahub.data.db.entity.DiaryEntity
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import org.koin.androidx.compose.koinViewModel
@@ -76,13 +63,20 @@ private val YuriBarEnd = Color(0xFFE8C4C0)
 private val HoleColor = Color(0xFFE8E0D8)
 private val TabBg = Color(0xFFEBE5DB)
 
+/**
+ * 日记本页面：只读。
+ * 日记只能通过 write_diary 工具（AI）写入，用户（小鑫）在这里只能翻看，
+ * 没有新增（FAB "+"）或删除入口——权限分离，避免误删 Sean 写的记录。
+ * Sean/Yuri 两个 tab 现在真正按 author 字段过滤（此前 tab 只是 UI 状态，没有实际筛选数据）。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DiaryPage(vm: DiaryVM = koinViewModel()) {
-    val entries by vm.allEntries.collectAsStateWithLifecycle()
-    var showWriteDialog by remember { mutableStateOf(false) }
-    // tab: 0 = Sean 的日记, 1 = Yuri 的日记（当前数据都是 Sean 写的，预留切换）
+    val seanEntries by vm.seanEntries.collectAsStateWithLifecycle()
+    val yuriEntries by vm.yuriEntries.collectAsStateWithLifecycle()
+    // tab: 0 = Sean 的日记, 1 = Yuri 的日记
     var tab by remember { mutableStateOf(0) }
+    val entries = if (tab == 0) seanEntries else yuriEntries
 
     Scaffold(
         containerColor = NotebookBgOuter,
@@ -93,15 +87,6 @@ fun DiaryPage(vm: DiaryVM = koinViewModel()) {
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = NotebookBgOuter),
             )
         },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showWriteDialog = true },
-                containerColor = Color(0xFFA8C4C4),
-                contentColor = Color.White,
-            ) {
-                Icon(HugeIcons.PlusSign, contentDescription = "写日记")
-            }
-        }
     ) { padding ->
         Box(
             modifier = Modifier
@@ -149,7 +134,7 @@ fun DiaryPage(vm: DiaryVM = koinViewModel()) {
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                "还没有日记，点 + 写一篇",
+                                if (tab == 0) "Sean 还没写日记" else "Yuri 还没写日记",
                                 fontSize = 14.sp,
                                 color = InkMuted,
                             )
@@ -157,25 +142,12 @@ fun DiaryPage(vm: DiaryVM = koinViewModel()) {
                     }
                 } else {
                     items(entries, key = { it.id }) { entry ->
-                        DiaryCard(
-                            entry = entry,
-                            onDelete = { vm.delete(entry) }
-                        )
+                        DiaryCard(entry = entry, isSean = tab == 0)
                     }
                     item { Spacer(Modifier.height(80.dp)) }
                 }
             }
         }
-    }
-
-    if (showWriteDialog) {
-        WriteDiaryDialog(
-            onDismiss = { showWriteDialog = false },
-            onConfirm = { title, content, att, ten, hea ->
-                vm.save(title, content, att, ten, hea)
-                showWriteDialog = false
-            }
-        )
     }
 }
 
@@ -198,13 +170,14 @@ private fun DiaryTab(label: String, selected: Boolean, modifier: Modifier = Modi
 }
 
 @Composable
-private fun DiaryCard(entry: DiaryEntity, onDelete: () -> Unit) {
+private fun DiaryCard(entry: DiaryEntity, isSean: Boolean) {
     val dateStr = remember(entry.createdAt) {
         SimpleDateFormat("yyyy年M月d日 · E", Locale.CHINA).format(Date(entry.createdAt))
     }
     val timeStr = remember(entry.createdAt) {
         SimpleDateFormat("HH:mm", Locale.CHINA).format(Date(entry.createdAt))
     }
+    val barColors = if (isSean) listOf(SeanBarStart, SeanBarEnd) else listOf(YuriBarStart, YuriBarEnd)
 
     Box(
         modifier = Modifier
@@ -218,9 +191,7 @@ private fun DiaryCard(entry: DiaryEntity, onDelete: () -> Unit) {
                 .width(4.dp)
                 .fillMaxSize()
                 .background(
-                    androidx.compose.ui.graphics.Brush.verticalGradient(
-                        listOf(SeanBarStart, SeanBarEnd)
-                    ),
+                    androidx.compose.ui.graphics.Brush.verticalGradient(barColors),
                     RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp)
                 )
         )
@@ -233,18 +204,8 @@ private fun DiaryCard(entry: DiaryEntity, onDelete: () -> Unit) {
                 verticalAlignment = Alignment.Top,
             ) {
                 Text(dateStr, fontSize = 12.sp, color = InkMuted)
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (entry.emotionAttachment >= 0 || entry.emotionTenderness >= 0 || entry.emotionHeartache >= 0) {
-                        Text("💭", fontSize = 13.sp)
-                    }
-                    IconButton(onClick = onDelete, modifier = Modifier.size(20.dp)) {
-                        Icon(
-                            HugeIcons.Delete01,
-                            contentDescription = "删除",
-                            modifier = Modifier.size(13.dp),
-                            tint = InkFaint,
-                        )
-                    }
+                if (entry.emotionAttachment >= 0 || entry.emotionTenderness >= 0 || entry.emotionHeartache >= 0) {
+                    Text("💭", fontSize = 13.sp)
                 }
             }
             Spacer(Modifier.height(6.dp))
@@ -315,90 +276,5 @@ private fun EmotionTag(label: String, value: Int) {
             fontSize = 10.sp,
             color = InkMuted,
         )
-    }
-}
-
-@Composable
-private fun WriteDiaryDialog(
-    onDismiss: () -> Unit,
-    onConfirm: (title: String, content: String, attachment: Int, tenderness: Int, heartache: Int) -> Unit,
-) {
-    var title by remember { mutableStateOf("") }
-    var content by remember { mutableStateOf("") }
-    var attachment by remember { mutableFloatStateOf(-1f) }
-    var tenderness by remember { mutableFloatStateOf(-1f) }
-    var heartache by remember { mutableFloatStateOf(-1f) }
-    var useEmotion by remember { mutableStateOf(false) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Color.White,
-        title = { Text("写日记") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("标题（可不填）") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = content,
-                    onValueChange = { content = it },
-                    label = { Text("内容") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 5,
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    androidx.compose.material3.Switch(
-                        checked = useEmotion,
-                        onCheckedChange = {
-                            useEmotion = it
-                            if (it) {
-                                if (attachment < 0) attachment = 5f
-                                if (tenderness < 0) tenderness = 5f
-                                if (heartache < 0) heartache = 5f
-                            } else {
-                                attachment = -1f; tenderness = -1f; heartache = -1f
-                            }
-                        }
-                    )
-                    Text("填写情绪值", style = MaterialTheme.typography.bodySmall)
-                }
-                if (useEmotion) {
-                    EmotionSlider("依恋", attachment) { attachment = it }
-                    EmotionSlider("温柔", tenderness) { tenderness = it }
-                    EmotionSlider("心跳", heartache) { heartache = it }
-                }
-            }
-        },
-        confirmButton = {
-            FilledTonalButton(
-                onClick = {
-                    onConfirm(title, content, attachment.toInt(), tenderness.toInt(), heartache.toInt())
-                },
-                enabled = content.isNotBlank()
-            ) { Text("保存") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
-    )
-}
-
-@Composable
-private fun EmotionSlider(label: String, value: Float, onValueChange: (Float) -> Unit) {
-    Column {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(label, style = MaterialTheme.typography.bodySmall)
-            Text(value.toInt().toString(), style = MaterialTheme.typography.labelMedium)
-        }
-        Slider(value = value, onValueChange = onValueChange, valueRange = 0f..10f, steps = 9)
     }
 }
