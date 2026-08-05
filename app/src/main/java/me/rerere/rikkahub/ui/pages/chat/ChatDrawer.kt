@@ -112,6 +112,7 @@ import me.rerere.rikkahub.ui.hooks.rememberIsPlayStoreVersion
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.modifier.onClick
 import me.rerere.rikkahub.utils.navigateToChatPage
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.toDp
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
@@ -183,8 +184,19 @@ fun ChatDrawerContent(
     // Menu popup 状态
     var showMenuPopup by remember { mutableStateOf(false) }
 
+    val drawerColorScheme = MaterialTheme.colorScheme
+    // 玻璃模式下 surface 的 alpha 被全局 interfaceSurfaceOpacity 压低（默认约82%），
+    // 侧边栏又叠加在聊天页 scrim 之上，两层半透明叠加会显得发暗发灰。
+    // 侧边栏本身需要保持清晰可读，所以这里固定给一个接近不透明的浅色容器，不跟随全局透明度设置。
+    val drawerContainerColor = if (LocalDarkMode.current) {
+        drawerColorScheme.surfaceContainerLow.copy(alpha = 0.96f)
+    } else {
+        androidx.compose.ui.graphics.Color.White.copy(alpha = 0.96f)
+    }
+
     ModalDrawerSheet(
-        modifier = Modifier.width(300.dp)
+        modifier = Modifier.width(300.dp),
+        drawerContainerColor = drawerContainerColor,
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             // 侧边栏背景图（最底层）
