@@ -42,6 +42,10 @@ data class DiaryEntity(
     @ColumnInfo("emotion_heartache")
     val emotionHeartache: Int = -1,
 
+    /** 作者: "sean" 或 "yuri"，默认 sean（历史数据全部由 Sean 写入） */
+    @ColumnInfo("author", defaultValue = "sean")
+    val author: String = "sean",
+
     /** 创建时间戳 */
     @ColumnInfo("created_at")
     val createdAt: Long = System.currentTimeMillis(),
