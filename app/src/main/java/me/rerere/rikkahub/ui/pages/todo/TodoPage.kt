@@ -5,7 +5,8 @@
  */
 package me.rerere.rikkahub.ui.pages.todo
 
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,12 +23,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -44,8 +45,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Delete01
@@ -54,6 +58,21 @@ import me.rerere.hugeicons.stroke.Time02
 import me.rerere.rikkahub.data.db.entity.TodoEntity
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import org.koin.androidx.compose.koinViewModel
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+// ── 收据配色 ──────────────────────────────────────────────
+private val PaperBg = Color(0xFFFAF9F6)
+private val PaperBgOuter = Color(0xFFF5F5F0)
+private val InkMain = Color(0xFF3A3A2A)
+private val InkSub = Color(0xFF6A6A5A)
+private val InkMuted = Color(0xFF8A8A7A)
+private val InkFaint = Color(0xFFA0A090)
+private val DashLine = Color(0xFFD0D0C0)
+private val DashLineLight = Color(0xFFE0E0D8)
+private val FabBg = Color(0xFFD8E8E8)
+private val FabIcon = Color(0xFF5A7A7A)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,71 +85,143 @@ fun TodoPage(vm: TodoVM = koinViewModel()) {
     // tab: 0=Sean给Yuri  1=Yuri给Sean  2=已完成
     var tab by remember { mutableStateOf(0) }
 
+    val today = remember { Date() }
+    val dateStr = remember { SimpleDateFormat("yyyy / MM / dd · E", Locale.CHINA).format(today) }
+    val nowStr = remember { SimpleDateFormat("HH:mm", Locale.CHINA).format(today) }
+    val receiptNo = remember { SimpleDateFormat("yy-MM-dd", Locale.CHINA).format(today) + "-001" }
+
     Scaffold(
+        containerColor = PaperBgOuter,
         topBar = {
             TopAppBar(
                 title = {
-                    Text("待办", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "CHECKLIST",
+                        letterSpacing = 4.sp,
+                        fontSize = 14.sp,
+                        color = InkSub,
+                    )
                 },
                 navigationIcon = { BackButton() },
+                colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                    containerColor = PaperBgOuter,
+                ),
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAddDialog = true }) {
+            FloatingActionButton(
+                onClick = { showAddDialog = true },
+                containerColor = FabBg,
+                contentColor = FabIcon,
+                shape = RoundedCornerShape(12.dp),
+            ) {
                 Icon(HugeIcons.PlusSign, contentDescription = "新增待办")
             }
         }
     ) { padding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 16.dp)
+                .background(PaperBg)
         ) {
-            // tab bar
-            Row(
+            LazyColumn(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .fillMaxSize()
+                    .padding(horizontal = 24.dp),
             ) {
-                TabChip("Sean → Yuri", tab == 0) { tab = 0 }
-                TabChip("Yuri → Sean", tab == 1) { tab = 1 }
-                TabChip("已完成 (${doneItems.size})", tab == 2) { tab = 2 }
-            }
-
-            HorizontalDivider()
-            Spacer(Modifier.height(8.dp))
-
-            val displayItems = when (tab) {
-                0 -> yuriItems  // Sean 写的，写给 Yuri 看
-                1 -> seanItems  // Yuri 写的，写给 Sean 看
-                else -> doneItems
-            }
-
-            if (displayItems.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = if (tab == 2) "还没有完成的待办" else "还没有待办，点 + 新增一项",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                // ── 收据抬头 ──
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp, bottom = 20.dp)
+                            .border(width = 0.dp, color = Color.Transparent)
+                            .padding(bottom = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            "S & Y · GENERAL STORE",
+                            fontSize = 13.sp,
+                            letterSpacing = 6.sp,
+                            color = InkSub,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            dateStr,
+                            fontSize = 14.sp,
+                            letterSpacing = 2.sp,
+                            color = InkMain,
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        ReceiptInfoRow("开店", "00:00")
+                        ReceiptInfoRow("柜员", "Sean · Yuri")
+                        ReceiptInfoRow("此刻", nowStr)
+                        ReceiptInfoRow("单据号", "#$receiptNo")
+                        Spacer(Modifier.height(4.dp))
+                        DashedDivider(DashLine)
+                    }
                 }
-            } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+
+                // ── Tab 切换 ──
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        ReceiptTab("Sean → Yuri", tab == 0) { tab = 0 }
+                        ReceiptTab("Yuri → Sean", tab == 1) { tab = 1 }
+                        ReceiptTab("已完成 (${doneItems.size})", tab == 2) { tab = 2 }
+                    }
+                    DashedDivider(DashLine)
+                    Spacer(Modifier.height(16.dp))
+                }
+
+                val displayItems = when (tab) {
+                    0 -> yuriItems  // Sean 写的，写给 Yuri 看
+                    1 -> seanItems  // Yuri 写的，写给 Sean 看
+                    else -> doneItems
+                }
+
+                if (displayItems.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 60.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (tab == 2) "还没有完成的待办" else "还没有待办，点 + 新增一项",
+                                fontSize = 13.sp,
+                                color = InkFaint,
+                            )
+                        }
+                    }
+                } else {
+                    item {
+                        val sectionLabel = when (tab) {
+                            0 -> "今日订单 · Yuri · ${displayItems.size} 项"
+                            1 -> "今日订单 · Sean · ${displayItems.size} 项"
+                            else -> "已完成 · ${displayItems.size} 项"
+                        }
+                        Text(
+                            sectionLabel,
+                            fontSize = 12.sp,
+                            color = InkMuted,
+                            modifier = Modifier.padding(bottom = 14.dp),
+                        )
+                    }
                     items(displayItems, key = { it.id }) { item ->
-                        TodoItemCard(
+                        ReceiptTodoRow(
                             item = item,
                             onToggle = { vm.toggleDone(item) },
                             onDelete = { vm.deleteItem(item) }
                         )
                     }
-                    item { Spacer(Modifier.height(80.dp)) }
+                    item { Spacer(Modifier.height(100.dp)) }
                 }
             }
         }
@@ -148,72 +239,116 @@ fun TodoPage(vm: TodoVM = koinViewModel()) {
 }
 
 @Composable
-private fun TabChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    val bg by animateColorAsState(
-        if (selected) MaterialTheme.colorScheme.primaryContainer
-        else MaterialTheme.colorScheme.surfaceContainerLow,
-        label = "tab_bg"
-    )
+private fun ReceiptInfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(label, fontSize = 12.sp, color = InkSub)
+        Text(value, fontSize = 12.sp, color = InkSub)
+    }
+    Spacer(Modifier.height(4.dp))
+}
+
+@Composable
+private fun DashedDivider(color: Color) {
+    androidx.compose.foundation.Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(1.dp)
+    ) {
+        val dashWidth = 6.dp.toPx()
+        val gapWidth = 4.dp.toPx()
+        var x = 0f
+        while (x < size.width) {
+            drawLine(
+                color = color,
+                start = androidx.compose.ui.geometry.Offset(x, 0f),
+                end = androidx.compose.ui.geometry.Offset(x + dashWidth, 0f),
+                strokeWidth = 1.dp.toPx(),
+            )
+            x += dashWidth + gapWidth
+        }
+    }
+}
+
+@Composable
+private fun ReceiptTab(label: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
-        color = bg,
-        shape = RoundedCornerShape(20.dp),
+        color = if (selected) Color(0xFFE8E8E0) else Color.Transparent,
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (selected) Color(0xFFB0B0A0) else DashLine,
+        ),
+        shape = RoundedCornerShape(4.dp),
     ) {
         Text(
             text = label,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            style = MaterialTheme.typography.labelMedium,
-            color = if (selected)
-                MaterialTheme.colorScheme.onPrimaryContainer
-            else
-                MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 12.sp,
+            color = if (selected) InkMain else InkMuted,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
         )
     }
 }
 
 @Composable
-private fun TodoItemCard(
+private fun ReceiptTodoRow(
     item: TodoEntity,
     onToggle: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    Column {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(vertical = 12.dp),
+            verticalAlignment = Alignment.Top,
         ) {
-            Checkbox(
-                checked = item.done,
-                onCheckedChange = { onToggle() },
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(Modifier.width(10.dp))
+            // 收据风格方框勾选
+            Box(
+                modifier = Modifier
+                    .padding(top = 2.dp, end = 12.dp)
+                    .size(18.dp)
+                    .border(1.5.dp, InkFaint, RoundedCornerShape(2.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Checkbox(
+                    checked = item.done,
+                    onCheckedChange = { onToggle() },
+                    modifier = Modifier.size(18.dp),
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = Color.Transparent,
+                        uncheckedColor = Color.Transparent,
+                        checkmarkColor = InkSub,
+                    )
+                )
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = item.content,
-                    style = MaterialTheme.typography.bodyMedium,
+                    fontSize = 14.sp,
+                    color = if (item.done) InkFaint else InkMain,
                     textDecoration = if (item.done) TextDecoration.LineThrough else TextDecoration.None,
-                    color = if (item.done)
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    else
-                        MaterialTheme.colorScheme.onSurface,
+                    lineHeight = 20.sp,
                 )
-                if (item.reminderTime.isNotBlank()) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (item.done) {
+                        Text(
+                            text = "完成 · ${item.author}写的",
+                            fontSize = 11.sp,
+                            color = InkFaint,
+                        )
+                    } else if (item.reminderTime.isNotBlank()) {
                         Icon(
                             HugeIcons.Time02,
                             contentDescription = null,
-                            modifier = Modifier.size(12.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            modifier = Modifier.size(11.dp),
+                            tint = InkFaint,
                         )
                         val repeatLabel = when (item.repeatMode) {
                             "daily" -> " 每天"
@@ -222,27 +357,28 @@ private fun TodoItemCard(
                         }
                         Text(
                             text = "${item.reminderTime}$repeatLabel · ${item.author}写的",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontSize = 11.sp,
+                            color = InkFaint,
+                        )
+                    } else {
+                        Text(
+                            text = "${item.author}写的",
+                            fontSize = 11.sp,
+                            color = InkFaint,
                         )
                     }
-                } else {
-                    Text(
-                        text = "${item.author}写的",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             }
-            IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+            IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
                 Icon(
                     HugeIcons.Delete01,
                     contentDescription = "删除",
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    modifier = Modifier.size(14.dp),
+                    tint = Color(0xFFC0C0B0),
                 )
             }
         }
+        DashedDivider(DashLineLight)
     }
 }
 
@@ -270,16 +406,14 @@ private fun AddTodoDialog(
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 2,
                 )
-                // 作者选择
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text("谁写的：", style = MaterialTheme.typography.bodySmall)
-                    TabChip("Sean", author == "sean") { author = "sean"; target = "yuri" }
-                    TabChip("Yuri", author == "yuri") { author = "yuri"; target = "sean" }
+                    ReceiptTab("Sean", author == "sean") { author = "sean"; target = "yuri" }
+                    ReceiptTab("Yuri", author == "yuri") { author = "yuri"; target = "sean" }
                 }
-                // 提醒时间
                 OutlinedTextField(
                     value = reminder,
                     onValueChange = { reminder = it },
@@ -287,7 +421,6 @@ private fun AddTodoDialog(
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = { Text("例：21:00") },
                 )
-                // 重复
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
