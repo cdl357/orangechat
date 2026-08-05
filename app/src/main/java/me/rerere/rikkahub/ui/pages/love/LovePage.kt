@@ -267,56 +267,57 @@ fun LovePage() {
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
                         .background(QuoteBg, RoundedCornerShape(14.dp))
-                        .border(0.dp, Color.Transparent, RoundedCornerShape(14.dp))
                 ) {
-                    // 左侧蓝色竖线
-                    Box(
-                        modifier = Modifier
-                            .width(3.dp)
-                            .fillMaxHeight()
-                            .background(QuoteBorder, RoundedCornerShape(topStart = 14.dp, bottomStart = 14.dp))
-                            .align(Alignment.CenterStart)
-                    )
-                    Column(
-                        modifier = Modifier.padding(start = 18.dp, end = 16.dp, top = 16.dp, bottom = 14.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "◆",
-                                fontSize = 10.sp,
-                                color = AccentPink,
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "今日情话 · FOR YURI",
-                                fontSize = 11.sp,
-                                color = QuoteBorder,
-                                letterSpacing = 1.sp,
-                            )
-                            Spacer(modifier = Modifier.weight(1f))
-                            if (quoteLoading) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = TextMuted,
-                                )
-                            } else {
-                                Text(
-                                    text = "↻",
-                                    fontSize = 16.sp,
-                                    color = TextMuted,
-                                    modifier = Modifier.clickable { vm.loadQuote(context, forceRefresh = true) }
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = if (quote.isNotBlank()) "「$quote」" else "「就算下雨，也想带你去看云。」",
-                            fontSize = 14.sp,
-                            color = TextMain,
-                            lineHeight = 22.sp,
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        // 左侧蓝色竖线
+                        Box(
+                            modifier = Modifier
+                                .width(3.dp)
+                                .height(80.dp)
+                                .background(QuoteBorder, RoundedCornerShape(2.dp))
                         )
-                    }
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(start = 15.dp, end = 16.dp, top = 16.dp, bottom = 14.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "◆",
+                                    fontSize = 10.sp,
+                                    color = AccentPink,
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "今日情话 · FOR YURI",
+                                    fontSize = 11.sp,
+                                    color = QuoteBorder,
+                                    letterSpacing = 1.sp,
+                                )
+                                Spacer(modifier = Modifier.weight(1f))
+                                if (quoteLoading) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = TextMuted,
+                                    )
+                                } else {
+                                    Text(
+                                        text = "↻",
+                                        fontSize = 16.sp,
+                                        color = TextMuted,
+                                        modifier = Modifier.clickable { vm.loadQuote(context, forceRefresh = true) }
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = if (quote.isNotBlank()) "「$quote」" else "「就算下雨，也想带你去看云。」",
+                                fontSize = 14.sp,
+                                color = TextMain,
+                                lineHeight = 22.sp,
+                            )
+                        }
                     }
                 }
             }
