@@ -23,4 +23,7 @@ interface AlbumDAO {
 
     @Query("SELECT * FROM album_item WHERE saved_by = :savedBy ORDER BY created_at DESC")
     fun observeBySavedBy(savedBy: String): Flow<List<AlbumEntity>>
+
+    @Query("SELECT * FROM album_item WHERE folder_id = :folderId ORDER BY created_at DESC")
+    fun observeByFolder(folderId: Int): Flow<List<AlbumEntity>>
 }
