@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.PlusSign
 import me.rerere.rikkahub.data.db.entity.BulletinEntity
 import me.rerere.rikkahub.ui.components.nav.BackButton
