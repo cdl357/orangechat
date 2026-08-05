@@ -332,6 +332,7 @@ private fun WriteDiaryDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = Color.White,
         title = { Text("写日记") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
