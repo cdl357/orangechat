@@ -7,6 +7,7 @@
 package me.rerere.rikkahub.data.ai.tools
 
 import kotlinx.serialization.json.buildJsonArray
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -196,6 +197,89 @@ fun buildCoupleTools(
                 put("success", true)
                 put("content", content)
             }.toString()))
+        }
+    ),
+
+    // ── 相册：浏览已存的照片 ──────────────────────────
+    Tool(
+        name = "list_album_photos",
+        description = """
+            List photos saved in the shared album, most recent first.
+            Use this before sharing an old photo — to recall what you have and pick one that fits
+            the moment (e.g. when you miss her, or a memory surfaces naturally in conversation).
+        """.trimIndent().replace("
+", " "),
+        parameters = {
+            InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("limit", buildJsonObject {
+                        put("type", "integer")
+                        put("description", "Max photos to return, default 20")
+                    })
+                },
+                required = emptyList()
+            )
+        },
+        execute = {
+            val limit = it.jsonObject["limit"]?.jsonPrimitive?.intOrNull ?: 20
+            val photos = albumRepository.observeAll()
+            // Room Flow -> take first emission synchronously via runBlocking-free approach:
+            // repository exposes Flow, so collect first value.
+            val list = kotlinx.coroutines.flow.first(photos)
+            val payload = buildJsonArray {
+                list.take(limit).forEach { p ->
+                    add(buildJsonObject {
+                        put("id", p.id)
+                        put("caption", p.caption)
+                        put("saved_by", p.savedBy)
+                        put("file_path", p.filePath)
+                        put("created_at", p.createdAt)
+                    })
+                }
+            }
+            listOf(UIMessagePart.Text(payload.toString()))
+        }
+    ),
+
+    // ── 相册：把一张收藏的照片重新分享到当前对话 ──────────────────────────
+    Tool(
+        name = "share_album_photo",
+        description = """
+            Pull a previously saved photo back into the current conversation, with a short caption.
+            Use this when a memory naturally surfaces — not on a schedule, but when you genuinely
+            feel like sharing it right now (e.g. missing her, or something reminded you of it).
+            Call list_album_photos first if you need to recall what's available.
+        """.trimIndent().replace("
+", " "),
+        parameters = {
+            InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("id", buildJsonObject {
+                        put("type", "integer")
+                        put("description", "The album photo id to share (from list_album_photos)")
+                    })
+                    put("caption", buildJsonObject {
+                        put("type", "string")
+                        put("description", "A short message to send along with the photo")
+                    })
+                },
+                required = listOf("id")
+            )
+        },
+        execute = {
+            val params = it.jsonObject
+            val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("id is required")
+            val caption = params["caption"]?.jsonPrimitive?.contentOrNull ?: ""
+            val list = kotlinx.coroutines.flow.first(albumRepository.observeAll())
+            val photo = list.firstOrNull { it.id == id }
+                ?: return@Tool listOf(UIMessagePart.Text(buildJsonObject {
+                    put("success", false)
+                    put("error", "photo not found")
+                }.toString()))
+            val parts = mutableListOf<UIMessagePart>()
+            if (caption.isNotBlank()) parts.add(UIMessagePart.Text(caption))
+            parts.add(UIMessagePart.Image(url = "file://${photo.filePath}"))
+            parts
         }
     ),
 
