@@ -238,6 +238,23 @@ private fun AssistantLocalToolContent(
                 }
             )
             item(
+                headlineContent = { Text("情侣生活工具") },
+                supportingContent = { Text("允许 AI 主动写待办提醒、写日记、贴便利贴留言、把截图存进共享相册") },
+                trailingContent = {
+                    Switch(
+                        checked = assistant.localTools.contains(LocalToolOption.CoupleTools),
+                        onCheckedChange = {
+                            val newLocalTools = if (it) {
+                                assistant.localTools + LocalToolOption.CoupleTools
+                            } else {
+                                assistant.localTools - LocalToolOption.CoupleTools
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            )
+            item(
                 headlineContent = { Text("SSH 远程连接") },
                 supportingContent = { Text("远程执行命令、SFTP 上传下载、保存主机凭据") },
                 trailingContent = {
