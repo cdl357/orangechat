@@ -256,6 +256,7 @@ private fun AddBulletinDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = Color.White,
         title = { Text("贴一张便签") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
