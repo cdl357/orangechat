@@ -8,11 +8,15 @@ package me.rerere.rikkahub.ui.pages.chat
 
 import androidx.activity.ComponentActivity
 import android.graphics.BitmapFactory
+import android.os.Build
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -31,6 +35,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DrawerDefaults
+import me.rerere.rikkahub.ui.theme.materialModeBorderStroke
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -53,13 +59,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
@@ -76,22 +84,16 @@ import me.rerere.hugeicons.stroke.Image02
 import me.rerere.hugeicons.stroke.InLove
 import me.rerere.hugeicons.stroke.LanguageCircle
 import me.rerere.hugeicons.stroke.LookTop
-import me.rerere.hugeicons.stroke.MessageMultiple01
-import me.rerere.hugeicons.stroke.Notebook01
 import me.rerere.hugeicons.stroke.PencilEdit01
-import me.rerere.hugeicons.stroke.QuillWrite01
 import me.rerere.hugeicons.stroke.Rocket01
 import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Settings03
 import me.rerere.hugeicons.stroke.Sparkles
-import me.rerere.hugeicons.stroke.Tick01
-import me.rerere.hugeicons.stroke.Sun01
-import me.rerere.hugeicons.stroke.MusicNote02
-
 import me.rerere.hugeicons.stroke.TransactionHistory
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.datastore.DisplayMaterialMode
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Conversation
@@ -111,6 +113,7 @@ import me.rerere.rikkahub.ui.hooks.readBooleanPreference
 import me.rerere.rikkahub.ui.hooks.rememberIsPlayStoreVersion
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.modifier.onClick
+import me.rerere.rikkahub.ui.theme.LocalMaterialMode
 import me.rerere.rikkahub.utils.navigateToChatPage
 import me.rerere.rikkahub.utils.toDp
 import org.koin.androidx.compose.koinViewModel
@@ -183,13 +186,51 @@ fun ChatDrawerContent(
     // Menu popup 状态
     var showMenuPopup by remember { mutableStateOf(false) }
 
+    val drawerSurfaceAlpha =
+        (settings.displaySetting.drawerSurfaceOpacity / 100f).coerceIn(0.6f, 1f)
+    // GLASS + 界面实时渲染 + API 31+：Drawer 容器透明，透出 ChatPage 同宿主原生模糊层；否则静态回退
+    val useLiveDrawerGlass =
+        settings.displaySetting.interfaceRealtimeRendering &&
+            LocalMaterialMode.current == DisplayMaterialMode.GLASS &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val drawerShape = DrawerDefaults.shape
+    val showDrawerBorder = when (settings.displaySetting.materialMode) {
+        DisplayMaterialMode.TRANSLUCENT,
+        DisplayMaterialMode.GLASS -> true
+
+        DisplayMaterialMode.FLAT,
+        DisplayMaterialMode.FOLLOW_THEME -> false
+    }
+    val drawerModifier = Modifier
+        .width(300.dp)
+        .then(
+            if (showDrawerBorder) {
+                Modifier.border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f),
+                    shape = drawerShape,
+                )
+            } else {
+                Modifier
+            }
+        )
+
     ModalDrawerSheet(
-        modifier = Modifier.width(300.dp)
+        modifier = drawerModifier,
+        drawerShape = drawerShape,
+        drawerContainerColor = if (useLiveDrawerGlass) {
+            // 实时玻璃：保留克制的最低半透明主题底色（不遮死 ChatPage 高斯模糊），
+            // 确保即使模糊副本绘制失败，Drawer 也不会全透明
+            DrawerDefaults.modalContainerColor.copy(alpha = 0.15f * drawerSurfaceAlpha)
+        } else {
+            DrawerDefaults.modalContainerColor.copy(alpha = drawerSurfaceAlpha)
+        },
+        drawerContentColor = MaterialTheme.colorScheme.onSurface,
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // 侧边栏背景图（最底层）
+            // 侧边栏背景图（最底层；实时模糊时跳过，避免遮挡 ChatPage 模糊层）
             val drawerBgPath = settings.displaySetting.drawerBackgroundPath
-            if (drawerBgPath.isNotEmpty()) {
+            if (drawerBgPath.isNotEmpty() && !useLiveDrawerGlass) {
                 val bgFile = java.io.File(drawerBgPath)
                 if (bgFile.exists()) {
                     val bgBitmap = remember(drawerBgPath) {
@@ -281,14 +322,56 @@ fun ChatDrawerContent(
             DrawerActions(
                 navController = navController,
                 drawerItemAlpha = settings.displaySetting.drawerItemAlpha,
+                materialMode = settings.displaySetting.materialMode,
             )
 
-            CoupleToolsSection(
-                navController = navController,
+            FolderBar(
+                folders = folders,
+                selectedFolderId = selectedFolderId,
+                onSelect = { drawerVm.selectFolder(it) },
+                onCreate = { showCreateFolderDialog = true },
+                onRename = { folderToRename = it },
+                onDelete = { folderToDelete = it },
+            )
+
+            ConversationList(
+                current = current,
+                conversations = conversations,
+                conversationJobs = conversationJobs.keys,
+                listState = conversationListState,
                 drawerItemAlpha = settings.displaySetting.drawerItemAlpha,
+                materialMode = settings.displaySetting.materialMode,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                onClick = {
+                    navigateToChatPage(navController, it.id)
+                },
+                onRegenerateTitle = {
+                    vm.generateTitle(it, true)
+                },
+                onDelete = {
+                    vm.deleteConversation(it)
+                    // Refresh the conversation list to immediately remove the deleted item
+                    // This fixes the issue where deleted conversations sometimes remain visible
+                    // until manually clicked (issue #747)
+                    conversations.refresh()
+                    if (it.id == current.id) {
+                        navigateToChatPage(navController)
+                    }
+                },
+                onPin = {
+                    vm.updatePinnedStatus(it)
+                },
+                onMoveToAssistant = {
+                    conversationToMove = it
+                    showMoveToAssistantSheet = true
+                },
+                onMoveToFolder = {
+                    conversationToMoveFolder = it
+                    showMoveToFolderSheet = true
+                }
             )
-
-            Spacer(Modifier.weight(1f))
 
             // 助手选择器
             AssistantPicker(
@@ -315,13 +398,29 @@ fun ChatDrawerContent(
             )
 
             Row(
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                horizontalArrangement = Arrangement.SpaceAround,
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp)
-                    .alpha(settings.displaySetting.drawerItemAlpha)
             ) {
+                DrawerAction(
+                    icon = {
+                        Icon(
+                            imageVector = HugeIcons.LookTop,
+                            contentDescription = stringResource(R.string.assistant_page_title)
+                        )
+                    },
+                    label = {
+                        Text(stringResource(R.string.assistant_page_title))
+                    },
+                    onClick = {
+                        navController.navigate(Screen.Assistant)
+                    },
+                    drawerItemAlpha = settings.displaySetting.drawerItemAlpha,
+                    materialMode = settings.displaySetting.materialMode,
+                )
+
                 Box {
                     DrawerAction(
                         icon = {
@@ -333,10 +432,13 @@ fun ChatDrawerContent(
                         onClick = {
                             showMenuPopup = true
                         },
+                        drawerItemAlpha = settings.displaySetting.drawerItemAlpha,
+                        materialMode = settings.displaySetting.materialMode,
                     )
                     DropdownMenu(
                         expanded = showMenuPopup,
-                        onDismissRequest = { showMenuPopup = false }
+                        onDismissRequest = { showMenuPopup = false },
+                        border = materialModeBorderStroke(),
                     ) {
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.chat_page_menu_ai_translator)) },
@@ -354,6 +456,22 @@ fun ChatDrawerContent(
                                 navController.navigate(Screen.ImageGen)
                             }
                         )
+                        DropdownMenuItem(
+                            text = { Text("健康数据") },
+                            leadingIcon = { Icon(HugeIcons.Zap, null) },
+                            onClick = {
+                                showMenuPopup = false
+                                navController.navigate(Screen.Health)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Mini Apps") },
+                            leadingIcon = { Icon(HugeIcons.Rocket01, null) },
+                            onClick = {
+                                showMenuPopup = false
+                                navController.navigate(Screen.MiniAppManager)
+                            }
+                        )
                     }
                 }
 
@@ -367,6 +485,8 @@ fun ChatDrawerContent(
                     onClick = {
                         navController.navigate(Screen.Favorite)
                     },
+                    drawerItemAlpha = settings.displaySetting.drawerItemAlpha,
+                    materialMode = settings.displaySetting.materialMode,
                 )
 
                 DrawerAction(
@@ -379,7 +499,11 @@ fun ChatDrawerContent(
                     onClick = {
                         navController.navigate(Screen.Stats)
                     },
+                    drawerItemAlpha = settings.displaySetting.drawerItemAlpha,
+                    materialMode = settings.displaySetting.materialMode,
                 )
+
+                Spacer(Modifier.weight(1f))
 
                 DrawerAction(
                     icon = {
@@ -389,6 +513,8 @@ fun ChatDrawerContent(
                     onClick = {
                         navController.navigate(Screen.Setting)
                     },
+                    drawerItemAlpha = settings.displaySetting.drawerItemAlpha,
+                    materialMode = settings.displaySetting.materialMode,
                 )
             }
         }
@@ -671,16 +797,19 @@ fun ChatDrawerContent(
 private fun DrawerActions(
     navController: Navigator,
     drawerItemAlpha: Float = 1f,
+    materialMode: DisplayMaterialMode,
 ) {
     Column {
         // 搜索入口
-        Surface(
+        DrawerItemSurface(
             onClick = { navController.navigate(Screen.MessageSearch) },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 4.dp),
             shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = drawerItemAlpha),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            drawerItemAlpha = drawerItemAlpha,
+            materialMode = materialMode,
         ) {
             Row(
                 modifier = Modifier
@@ -693,24 +822,24 @@ private fun DrawerActions(
                     imageVector = HugeIcons.Search01,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
                     text = stringResource(R.string.chat_page_search_chats),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
         }
 
         // 历史记录入口
-        Surface(
+        DrawerItemSurface(
             onClick = { navController.navigate(Screen.History) },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 4.dp),
             shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = drawerItemAlpha),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            drawerItemAlpha = drawerItemAlpha,
+            materialMode = materialMode,
         ) {
             Row(
                 modifier = Modifier
@@ -723,16 +852,116 @@ private fun DrawerActions(
                     imageVector = HugeIcons.TransactionHistory,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
                     text = stringResource(R.string.chat_page_history),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
         }
     }
+}
+
+@Composable
+private fun DrawerItemSurface(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    shape: Shape,
+    color: Color,
+    drawerItemAlpha: Float,
+    materialMode: DisplayMaterialMode,
+    content: @Composable () -> Unit,
+) {
+    val contentColor = MaterialTheme.colorScheme.onSurface
+    val backgroundColor = when (materialMode) {
+        DisplayMaterialMode.FLAT,
+        DisplayMaterialMode.FOLLOW_THEME -> color
+
+        DisplayMaterialMode.TRANSLUCENT,
+        DisplayMaterialMode.GLASS -> color.copy(alpha = drawerItemAlpha)
+    }
+    val borderColor = when (materialMode) {
+        DisplayMaterialMode.TRANSLUCENT -> contentColor.copy(alpha = 0.14f * drawerItemAlpha)
+        DisplayMaterialMode.GLASS -> contentColor.copy(alpha = 0.1f * drawerItemAlpha)
+        DisplayMaterialMode.FLAT,
+        DisplayMaterialMode.FOLLOW_THEME -> Color.Transparent
+    }
+    val materialModifier = when (materialMode) {
+        DisplayMaterialMode.TRANSLUCENT,
+        DisplayMaterialMode.GLASS -> Modifier.border(1.dp, borderColor, shape)
+
+        DisplayMaterialMode.FLAT,
+        DisplayMaterialMode.FOLLOW_THEME -> Modifier
+    }
+
+    Surface(
+        onClick = onClick,
+        modifier = modifier.then(materialModifier),
+        shape = shape,
+        color = backgroundColor,
+        contentColor = contentColor,
+    ) {
+        Box {
+            if (materialMode == DisplayMaterialMode.GLASS) {
+                DrawerItemGlassLayers(
+                    shape = shape,
+                    drawerItemAlpha = drawerItemAlpha,
+                )
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun BoxScope.DrawerItemGlassLayers(
+    shape: Shape,
+    drawerItemAlpha: Float,
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    Box(
+        modifier = Modifier
+            .matchParentSize()
+            .clip(shape)
+            .background(
+                Brush.linearGradient(
+                    colors = listOf(
+                        colorScheme.onSurface.copy(alpha = 0.1f * drawerItemAlpha),
+                        colorScheme.primary.copy(alpha = 0.07f * drawerItemAlpha),
+                        Color.Transparent,
+                    )
+                )
+            )
+    )
+    Box(
+        modifier = Modifier
+            .matchParentSize()
+            .clip(shape)
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        colorScheme.onSurface.copy(alpha = 0.13f * drawerItemAlpha),
+                        colorScheme.onSurface.copy(alpha = 0.035f * drawerItemAlpha),
+                        Color.Transparent,
+                    )
+                )
+            )
+    )
+    Box(
+        modifier = Modifier
+            .matchParentSize()
+            .border(
+                width = 1.dp,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        colorScheme.onSurface.copy(alpha = 0.2f * drawerItemAlpha),
+                        colorScheme.onSurface.copy(alpha = 0.045f * drawerItemAlpha),
+                        Color.Transparent,
+                    )
+                ),
+                shape = shape,
+            )
+    )
 }
 
 @Composable
@@ -741,13 +970,16 @@ private fun DrawerAction(
     icon: @Composable () -> Unit,
     label: @Composable () -> Unit,
     onClick: () -> Unit,
+    drawerItemAlpha: Float,
+    materialMode: DisplayMaterialMode,
 ) {
-    Surface(
+    DrawerItemSurface(
         onClick = onClick,
         modifier = modifier,
         color = MaterialTheme.colorScheme.primaryContainer,
         shape = CircleShape,
-        contentColor = MaterialTheme.colorScheme.onSurface,
+        drawerItemAlpha = drawerItemAlpha,
+        materialMode = materialMode,
     ) {
         Tooltip(
             tooltip = {
@@ -802,6 +1034,7 @@ private fun FolderBar(
                 DropdownMenu(
                     expanded = menuExpanded,
                     onDismissRequest = { menuExpanded = false },
+                    border = materialModeBorderStroke(),
                 ) {
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.chat_page_rename)) },
@@ -873,57 +1106,6 @@ private fun FolderChip(
         }
     }
 }
-
-@Composable
-private fun CoupleToolsSection(
-    navController: Navigator,
-    drawerItemAlpha: Float = 1f,
-) {
-    data class ToolEntry(val icon: androidx.compose.ui.graphics.vector.ImageVector, val label: String, val route: me.rerere.rikkahub.Screen)
-    val items = listOf(
-        ToolEntry(HugeIcons.Tick01, "待办", me.rerere.rikkahub.Screen.Todo),
-        ToolEntry(HugeIcons.QuillWrite01, "日记", me.rerere.rikkahub.Screen.Diary),
-        ToolEntry(HugeIcons.MessageMultiple01, "留言板", me.rerere.rikkahub.Screen.Bulletin),
-        ToolEntry(HugeIcons.Notebook01, "相册", me.rerere.rikkahub.Screen.Album),
-        ToolEntry(HugeIcons.Sun01, "潮汐", me.rerere.rikkahub.Screen.Tide),
-        ToolEntry(HugeIcons.MusicNote02, "朋友圈", me.rerere.rikkahub.Screen.Moments),
-        ToolEntry(HugeIcons.InLove, "我们", me.rerere.rikkahub.Screen.Love),
-    )
-    Column(
-        modifier = Modifier.padding(horizontal = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        items.forEach { entry ->
-            Surface(
-                onClick = { navController.navigate(entry.route) },
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = drawerItemAlpha),
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Icon(
-                        imageVector = entry.icon,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        text = entry.label,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-            }
-        }
-    }
-}
-
 
 @Composable
 private fun AssistantItem(
