@@ -124,6 +124,14 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("ssh")
     data object Ssh : LocalToolOption()
+
+    /**
+     * 情侣生活工具：待办 / 日记 / 留言板 / 相册。开启后 AI 可主动写待办提醒、写日记、
+     * 贴便利贴、把截图存进共享相册，而不只是被动等用户操作 UI。
+     */
+    @Serializable
+    @SerialName("couple_tools")
+    data object CoupleTools : LocalToolOption()
 }
  
 class LocalTools(
@@ -132,6 +140,10 @@ class LocalTools(
     private val workflowRepository: me.rerere.rikkahub.workflow.repository.WorkflowRepository,
     private val workflowEngine: me.rerere.rikkahub.workflow.execution.WorkflowEngine,
     private val sshHostRepository: me.rerere.rikkahub.data.repository.SshHostRepository,
+    private val todoRepository: me.rerere.rikkahub.data.repository.TodoRepository,
+    private val diaryRepository: me.rerere.rikkahub.data.repository.DiaryRepository,
+    private val bulletinRepository: me.rerere.rikkahub.data.repository.BulletinRepository,
+    private val albumRepository: me.rerere.rikkahub.data.repository.AlbumRepository,
 ) {
     val javascriptTool by lazy {
         Tool(
@@ -615,6 +627,9 @@ class LocalTools(
             tools.add(me.rerere.rikkahub.data.ai.tools.local.scrollTool(invocationContext))
             tools.add(me.rerere.rikkahub.data.ai.tools.local.globalActionTool(invocationContext))
             tools.add(me.rerere.rikkahub.data.ai.tools.local.takeScreenshotTool(context))
+        }
+        if (options.contains(LocalToolOption.CoupleTools)) {
+            tools.addAll(buildCoupleTools(todoRepository, diaryRepository, bulletinRepository, albumRepository))
         }
         if (options.contains(LocalToolOption.Ssh)) {
             tools.add(me.rerere.rikkahub.data.ai.tools.local.sshExecTool(context))
