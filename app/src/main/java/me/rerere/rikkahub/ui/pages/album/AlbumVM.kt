@@ -7,18 +7,39 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.db.entity.AlbumEntity
+import me.rerere.rikkahub.data.db.entity.AlbumFolderEntity
+import me.rerere.rikkahub.data.repository.AlbumFolderRepository
 import me.rerere.rikkahub.data.repository.AlbumRepository
 
-class AlbumVM(private val repo: AlbumRepository) : ViewModel() {
+class AlbumVM(
+    private val repo: AlbumRepository,
+    private val folderRepo: AlbumFolderRepository,
+) : ViewModel() {
     val allItems = repo.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    fun saveImage(filePath: String, caption: String = "", savedBy: String = "sean", conversationId: String = "") {
+    val allFolders = folderRepo.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun saveImage(filePath: String, caption: String = "", savedBy: String = "sean", conversationId: String = "", folderId: Int = 0) {
         if (filePath.isBlank()) return
         viewModelScope.launch {
-            repo.add(AlbumEntity(filePath = filePath, caption = caption, savedBy = savedBy, conversationId = conversationId))
+            repo.add(AlbumEntity(filePath = filePath, caption = caption, savedBy = savedBy, conversationId = conversationId, folderId = folderId))
         }
     }
 
     fun delete(item: AlbumEntity) { viewModelScope.launch { repo.delete(item) } }
+
+    fun createFolder(name: String, createdBy: String = "sean") {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            folderRepo.add(AlbumFolderEntity(name = name.trim(), createdBy = createdBy))
+        }
+    }
+
+    fun deleteFolder(folder: AlbumFolderEntity) {
+        viewModelScope.launch { folderRepo.delete(folder) }
+    }
+
+    fun itemsInFolder(folderId: Int) = allItems.value.filter { it.folderId == folderId }
 }
