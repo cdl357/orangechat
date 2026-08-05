@@ -8,6 +8,7 @@ package me.rerere.rikkahub.ui.pages.album
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,6 +41,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -318,7 +321,7 @@ private fun AlbumFolderDetailPage(
                         Text("${photos.size} 张", fontSize = 12.sp, color = TextSub)
                     }
                 },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") } },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = AlbumBgTop),
             )
         },
@@ -401,8 +404,8 @@ private fun PolaroidCard(photo: AlbumEntity, onClick: () -> Unit) {
             .width(150.dp)
             .rotate(rotation)
             .background(Color.White)
-            .padding(8.dp, 8.dp, 8.dp, 12.dp)
-            .then(Modifier),
+            .clickable(onClick = onClick)
+            .padding(8.dp, 8.dp, 8.dp, 12.dp),
     ) {
         Box(
             modifier = Modifier
@@ -410,7 +413,7 @@ private fun PolaroidCard(photo: AlbumEntity, onClick: () -> Unit) {
                 .height(120.dp)
                 .clip(RoundedCornerShape(2.dp))
                 .background(Brush.linearGradient(listOf(Color(0xFFE8F4F8), Color(0xFFD8EEF4))))
-                .then(Modifier),
+                ,
             contentAlignment = Alignment.Center,
         ) {
             val file = remember(photo.filePath) { File(photo.filePath) }
@@ -420,7 +423,7 @@ private fun PolaroidCard(photo: AlbumEntity, onClick: () -> Unit) {
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
-                        .then(androidx.compose.ui.Modifier)
+                        
                 )
             } else {
                 Text("\uD83D\uDDBC\uFE0F", fontSize = 32.sp)
@@ -445,7 +448,6 @@ private fun PolaroidCard(photo: AlbumEntity, onClick: () -> Unit) {
             modifier = Modifier.fillMaxWidth(),
         )
     }
-    // 点击手势需要放在最外层容器，用 Modifier.clickable 补充
 }
 
 @Composable
