@@ -396,6 +396,7 @@ private fun AddTodoDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = Color.White,
         title = { Text("新增待办") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
