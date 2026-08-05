@@ -31,6 +31,10 @@ data class AlbumEntity(
     @ColumnInfo("saved_by")
     val savedBy: String = "sean",
 
+    /** 所属相册分组 id，0 表示未分组（默认相册） */
+    @ColumnInfo("folder_id", defaultValue = "0")
+    val folderId: Int = 0,
+
     /** 来源对话 ID（可选，截图时记录） */
     @ColumnInfo("conversation_id")
     val conversationId: String = "",
