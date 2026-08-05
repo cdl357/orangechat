@@ -220,7 +220,7 @@ private fun StickyNote(note: BulletinEntity, onDelete: () -> Unit) {
                     modifier = Modifier.size(16.dp),
                 ) {
                     Icon(
-                        me.rerere.hugeicons.stroke.Delete01,
+                        HugeIcons.Delete01,
                         contentDescription = "删除",
                         modifier = Modifier.size(11.dp),
                         tint = InkSub,
