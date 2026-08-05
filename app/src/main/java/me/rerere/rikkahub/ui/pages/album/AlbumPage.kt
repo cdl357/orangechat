@@ -97,11 +97,24 @@ fun AlbumPage(vm: AlbumVM = koinViewModel()) {
     var showCreateDialog by remember { mutableStateOf(false) }
     var openedFolder by remember { mutableStateOf<AlbumFolderEntity?>(null) }
 
+    // 兜底：老版本/AI存图（save_to_album默认folderId=0）留下的、不属于任何现存相册本子的照片，
+    // 不能让它们"存进去了但哪都看不到"，用一个虚拟的"未分类"相册兜底展示。
+    val orphanPhotos = remember(items, folders) {
+        val realFolderIds = folders.map { it.id }.toSet()
+        items.filter { it.folderId !in realFolderIds }
+    }
+    val virtualUnsortedFolder = remember(orphanPhotos.isNotEmpty()) {
+        if (orphanPhotos.isNotEmpty()) {
+            AlbumFolderEntity(id = -1, name = "未分类", createdBy = "sean")
+        } else null
+    }
+
     val opened = openedFolder
     if (opened != null) {
+        val isVirtual = opened.id == -1
         AlbumFolderDetailPage(
             folder = opened,
-            photos = items.filter { it.folderId == opened.id },
+            photos = if (isVirtual) orphanPhotos else items.filter { it.folderId == opened.id },
             vm = vm,
             onBack = { openedFolder = null },
         )
@@ -134,7 +147,7 @@ fun AlbumPage(vm: AlbumVM = koinViewModel()) {
                 .padding(padding)
                 .background(Brush.verticalGradient(listOf(AlbumBgTop, AlbumBgBottom)))
         ) {
-            if (folders.isEmpty()) {
+            if (folders.isEmpty() && virtualUnsortedFolder == null) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("还没有相册，点 + 新建一本", color = TextSub, fontSize = 13.sp)
                 }
@@ -144,6 +157,16 @@ fun AlbumPage(vm: AlbumVM = koinViewModel()) {
                     contentPadding = PaddingValues(top = 16.dp, bottom = 100.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    virtualUnsortedFolder?.let { unsorted ->
+                        item(key = "unsorted") {
+                            FolderRow(
+                                folder = unsorted,
+                                photoCount = orphanPhotos.size,
+                                previewPhotos = orphanPhotos.take(3),
+                                onClick = { openedFolder = unsorted },
+                            )
+                        }
+                    }
                     items(folders, key = { it.id }) { folder ->
                         val folderPhotos = items.filter { it.folderId == folder.id }
                         FolderRow(
@@ -224,7 +247,12 @@ private fun FolderRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(folder.name, fontSize = 15.sp, color = TextMain, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
                 Spacer(Modifier.height(4.dp))
-                Text("$photoCount 张 · ${if (folder.createdBy == "sean") "Sean" else "Yuri"}建的", fontSize = 11.sp, color = TextSub)
+                val subLabel = if (folder.id == -1) {
+                    "$photoCount 张 · 旧数据兜底"
+                } else {
+                    "$photoCount 张 · ${if (folder.createdBy == "sean") "Sean" else "Yuri"}建的"
+                }
+                Text(subLabel, fontSize = 11.sp, color = TextSub)
             }
         }
     }
@@ -296,6 +324,9 @@ private fun AlbumFolderDetailPage(
 ) {
     val context = LocalContext.current
     var viewingPhoto by remember { mutableStateOf<AlbumEntity?>(null) }
+    // 虚拟"未分类"相册（id = -1）只是兜底展示旧数据/AI存图落到默认分组的照片，
+    // 不支持往里加照片——加照片应该走真实相册本子。
+    val isVirtualFolder = folder.id == -1
 
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let {
@@ -326,13 +357,15 @@ private fun AlbumFolderDetailPage(
         },
         containerColor = AlbumBgTop,
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { imagePicker.launch("image/*") },
-                containerColor = Color(0xFF6AB4C8),
-                contentColor = Color.White,
-                shape = RoundedCornerShape(14.dp),
-            ) {
-                Icon(HugeIcons.PlusSign, contentDescription = "加照片")
+            if (!isVirtualFolder) {
+                FloatingActionButton(
+                    onClick = { imagePicker.launch("image/*") },
+                    containerColor = Color(0xFF6AB4C8),
+                    contentColor = Color.White,
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Icon(HugeIcons.PlusSign, contentDescription = "加照片")
+                }
             }
         }
     ) { padding ->
@@ -344,7 +377,11 @@ private fun AlbumFolderDetailPage(
         ) {
             if (photos.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("这本相册还没有照片，点 + 导入", color = TextSub, fontSize = 13.sp)
+                    Text(
+                        if (isVirtualFolder) "没有未分类的照片" else "这本相册还没有照片，点 + 导入",
+                        color = TextSub,
+                        fontSize = 13.sp,
+                    )
                 }
             } else {
                 LazyColumn(
