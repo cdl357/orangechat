@@ -5,6 +5,7 @@ import me.rerere.rikkahub.data.db.entity.DiaryEntity
 
 class DiaryRepository(private val dao: DiaryDAO) {
     fun observeAll(): Flow<List<DiaryEntity>> = dao.observeAll()
+    fun observeByAuthor(author: String): Flow<List<DiaryEntity>> = dao.observeByAuthor(author)
     fun observeDates(): Flow<List<String>> = dao.observeDates()
     suspend fun add(item: DiaryEntity) = dao.insert(item)
     suspend fun update(item: DiaryEntity) = dao.update(item)
