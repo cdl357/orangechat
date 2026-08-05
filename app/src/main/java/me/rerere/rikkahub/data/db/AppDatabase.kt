@@ -52,6 +52,7 @@ import me.rerere.rikkahub.workflow.db.WorkflowRunDao
 import me.rerere.rikkahub.workflow.db.WorkflowRunEntity
 import me.rerere.rikkahub.data.db.migrations.Migration_16_17
 import me.rerere.rikkahub.data.db.migrations.Migration_24_25
+import me.rerere.rikkahub.data.db.migrations.Migration_34_35
 import me.rerere.rikkahub.data.db.migrations.Migration_8_9
 import me.rerere.rikkahub.utils.JsonInstant
 
@@ -79,7 +80,6 @@ import me.rerere.rikkahub.utils.JsonInstant
     ],
     version = 35,
     autoMigrations = [
-        AutoMigration(from = 34, to = 35),
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
         AutoMigration(from = 3, to = 4),
