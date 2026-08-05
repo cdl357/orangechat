@@ -144,6 +144,7 @@ class LocalTools(
     private val diaryRepository: me.rerere.rikkahub.data.repository.DiaryRepository,
     private val bulletinRepository: me.rerere.rikkahub.data.repository.BulletinRepository,
     private val albumRepository: me.rerere.rikkahub.data.repository.AlbumRepository,
+    private val albumFolderRepository: me.rerere.rikkahub.data.repository.AlbumFolderRepository,
 ) {
     val javascriptTool by lazy {
         Tool(
@@ -629,7 +630,7 @@ class LocalTools(
             tools.add(me.rerere.rikkahub.data.ai.tools.local.takeScreenshotTool(context))
         }
         if (options.contains(LocalToolOption.CoupleTools)) {
-            tools.addAll(buildCoupleTools(todoRepository, diaryRepository, bulletinRepository, albumRepository))
+            tools.addAll(buildCoupleTools(todoRepository, diaryRepository, bulletinRepository, albumRepository, albumFolderRepository))
         }
         if (options.contains(LocalToolOption.Ssh)) {
             tools.add(me.rerere.rikkahub.data.ai.tools.local.sshExecTool(context))
