@@ -224,7 +224,7 @@ fun buildCoupleTools(
             val photos = albumRepository.observeAll()
             // Room Flow -> take first emission synchronously via runBlocking-free approach:
             // repository exposes Flow, so collect first value.
-            val list = kotlinx.coroutines.flow.first(photos)
+            val list = photos.first()
             val payload = buildJsonArray {
                 list.take(limit).forEach { p ->
                     add(buildJsonObject {
@@ -268,7 +268,7 @@ fun buildCoupleTools(
             val params = it.jsonObject
             val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("id is required")
             val caption = params["caption"]?.jsonPrimitive?.contentOrNull ?: ""
-            val list = kotlinx.coroutines.flow.first(albumRepository.observeAll())
+            val list = albumRepository.observeAll().first()
             val photo = list.firstOrNull { p -> p.id == id }
             if (photo == null) {
                 listOf(UIMessagePart.Text(buildJsonObject {
