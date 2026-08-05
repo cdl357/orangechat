@@ -271,15 +271,18 @@ fun buildCoupleTools(
             val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("id is required")
             val caption = params["caption"]?.jsonPrimitive?.contentOrNull ?: ""
             val list = kotlinx.coroutines.flow.first(albumRepository.observeAll())
-            val photo = list.firstOrNull { it.id == id }
-                ?: return@Tool listOf(UIMessagePart.Text(buildJsonObject {
+            val photo = list.firstOrNull { p -> p.id == id }
+            if (photo == null) {
+                listOf(UIMessagePart.Text(buildJsonObject {
                     put("success", false)
                     put("error", "photo not found")
                 }.toString()))
-            val parts = mutableListOf<UIMessagePart>()
-            if (caption.isNotBlank()) parts.add(UIMessagePart.Text(caption))
-            parts.add(UIMessagePart.Image(url = "file://${photo.filePath}"))
-            parts
+            } else {
+                val parts = mutableListOf<UIMessagePart>()
+                if (caption.isNotBlank()) parts.add(UIMessagePart.Text(caption))
+                parts.add(UIMessagePart.Image(url = "file://${photo.filePath}"))
+                parts
+            }
         }
     ),
 
