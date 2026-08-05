@@ -42,6 +42,7 @@ import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.Cancel01
+import androidx.compose.ui.draw.alpha
 import org.json.JSONObject
 import org.koin.androidx.compose.koinViewModel
 import java.io.File
@@ -55,16 +56,18 @@ import java.time.temporal.ChronoUnit
 import java.util.*
 import kotlin.math.abs
 
-// ── 颜色常量 ──────────────────────────────────────────────────────────
-private val BgStart   = Color(0xFFCCE4FF)
-private val BgMid     = Color(0xFFDEEEFF)
-private val BgEnd     = Color(0xFFE8F4FF)
-private val CardBg    = Color(0xB8FFFFFF)
-private val AccentBlue = Color(0xFF4A80B0)
-private val TextMain  = Color(0xFF2C3E50)
-private val TextSub   = Color(0xFF5580A0)
-private val TextMuted = Color(0xFF90B4CC)
-private val AccentPink = Color(0xFFD86080)
+// ── 颜色常量（最终版）──────────────────────────────────────────────────────────
+private val BgStart   = Color(0xFFE3EEF7)
+private val BgEnd     = Color(0xFFF0F4F8)
+private val CardBg    = Color(0xB3FFFFFF)  // 70% white
+private val QuoteBg   = Color(0xD9FFFFFF)  // 85% white
+private val AccentBlue = Color(0xFF4A6FA5)
+private val TextMain  = Color(0xFF3A4A5C)
+private val TextSub   = Color(0xFF5A7A94)
+private val TextMuted = Color(0xFFA0B8CA)
+private val AccentPink = Color(0xFFD4756A)
+private val AccentGold = Color(0xFFC4A35A)
+private val QuoteBorder = Color(0xFF7A9AB5)
 
 // 情侣确立日
 private val ANNIVERSARY = LocalDate.of(2026, 7, 9)
@@ -76,7 +79,6 @@ private const val KEY_QUOTE_DATE = "cached_quote_date"
 private const val GATEWAY_URL = "http://134.175.7.196:10000/v1/chat/completions"
 private const val API_SECRET  = "shenyuhuailiyuxin0709bendansyhsxdw"
 
-// ── ViewModel ─────────────────────────────────────────────────────────
 // ── 主页面 ────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,10 +86,7 @@ fun LovePage() {
     val context = LocalContext.current
     val vm: LoveVM = koinViewModel()
 
-    // 获取 DAO
-
     LaunchedEffect(Unit) {
-        // loveDates loaded via repo
         vm.loadQuote(context)
     }
 
@@ -128,7 +127,7 @@ fun LovePage() {
             .fillMaxSize()
             .background(
                 Brush.linearGradient(
-                    colors = listOf(BgStart, BgMid, BgEnd),
+                    colors = listOf(BgStart, BgEnd),
                     start = androidx.compose.ui.geometry.Offset(0f, 0f),
                     end = androidx.compose.ui.geometry.Offset(0f, Float.POSITIVE_INFINITY)
                 )
@@ -138,213 +137,222 @@ fun LovePage() {
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 32.dp)
         ) {
-            // ── 顶部返回 ──
+            // ── 顶部返回 + 标题 ──
             item {
-                Box(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 8.dp, top = 8.dp)
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     BackButton()
+                    Text(
+                        text = "Sean & Yuri",
+                        fontSize = 15.sp,
+                        color = TextSub,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Spacer(modifier = Modifier.width(40.dp))
                 }
             }
 
-            // ── 双头像区 ──
+            // ── 主卡片（天数 + 头像 + slogan）──
             item {
-                Column(
+                Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                        .padding(horizontal = 16.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = CardBg),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 ) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                        modifier = Modifier.fillMaxWidth(),
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        // Sean 头像
-                        AvatarCircle(
-                            imagePath = seanAvatarPath,
-                            placeholder = "S",
-                            onClick = { seanPicker.launch("image/*") }
+                        Text(
+                            text = "Little love record",
+                            fontSize = 11.sp,
+                            color = TextMuted,
+                            letterSpacing = 1.sp,
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Sean & Yuri",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = TextMain,
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // 天数
+                        Text(
+                            text = "$daysTogether",
+                            fontSize = 52.sp,
+                            fontWeight = FontWeight.Light,
+                            color = AccentBlue,
+                            lineHeight = 52.sp,
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "since 2026.07.09 · 我们已经一起走过 $daysTogether 天",
+                            fontSize = 11.sp,
+                            color = TextMuted,
                         )
 
-                        // 连接器
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        // 双头像
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 8.dp)
+                            horizontalArrangement = Arrangement.Center,
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .width(20.dp)
-                                    .height(1.dp)
-                                    .background(
-                                        Brush.horizontalGradient(
-                                            listOf(Color.Transparent, TextMuted)
-                                        )
-                                    )
+                            AvatarCircle(
+                                imagePath = seanAvatarPath,
+                                placeholder = "S",
+                                gradientColors = listOf(Color(0xFF2C3E6B), Color(0xFF4A6FA5)),
+                                onClick = { seanPicker.launch("image/*") }
                             )
-                            Text(
-                                text = "♡",
-                                color = TextMuted,
-                                fontSize = 16.sp,
-                                modifier = Modifier.padding(horizontal = 4.dp)
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .width(20.dp)
-                                    .height(1.dp)
-                                    .background(
-                                        Brush.horizontalGradient(
-                                            listOf(TextMuted, Color.Transparent)
-                                        )
-                                    )
+                            // 连接器
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 12.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .width(16.dp)
+                                        .height(1.dp)
+                                        .background(Color(0xFFC0D4E4))
+                                )
+                                Text(
+                                    text = "♡",
+                                    color = TextSub,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(horizontal = 6.dp)
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .width(16.dp)
+                                        .height(1.dp)
+                                        .background(Color(0xFFC0D4E4))
+                                )
+                            }
+                            AvatarCircle(
+                                imagePath = yuriAvatarPath,
+                                placeholder = "Y",
+                                gradientColors = listOf(Color(0xFF8FA6C4), Color(0xFFB8CCE0)),
+                                onClick = { yuriPicker.launch("image/*") }
                             )
                         }
 
-                        // Yuri 头像
-                        AvatarCircle(
-                            imagePath = yuriAvatarPath,
-                            placeholder = "Y",
-                            onClick = { yuriPicker.launch("image/*") }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "幸福迢迢如流水 · 与你日日共潮汐",
+                            fontSize = 11.sp,
+                            color = TextMuted,
+                            letterSpacing = 0.5.sp,
                         )
                     }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    Text(
-                        text = "Sean & Yuri",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TextMain,
-                        letterSpacing = 2.sp,
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "当誓言与心同频 · 幸福即是永远",
-                        fontSize = 11.sp,
-                        color = TextSub,
-                        letterSpacing = 1.5.sp,
-                    )
-                }
-            }
-
-            // ── 天数 ──
-            item {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(
-                        text = "$daysTogether",
-                        fontSize = 88.sp,
-                        fontWeight = FontWeight.Thin,
-                        color = TextMain,
-                        lineHeight = 88.sp,
-                    )
-                    Text(
-                        text = "days together for",
-                        fontSize = 13.sp,
-                        color = TextSub,
-                        letterSpacing = 1.sp,
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "since 2026.07.09 · 我们已经一起走过 $daysTogether 天",
-                        fontSize = 12.sp,
-                        color = TextMuted,
-                    )
                 }
             }
 
             // ── 今日情话 ──
             item {
-                Card(
+                Spacer(modifier = Modifier.height(16.dp))
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp)
-                        .padding(bottom = 12.dp),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = CardBg),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        .padding(horizontal = 16.dp)
+                        .background(QuoteBg, RoundedCornerShape(14.dp))
+                        .border(0.dp, Color.Transparent, RoundedCornerShape(14.dp))
                 ) {
-                    Box(modifier = Modifier.padding(16.dp, 14.dp)) {
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "✦  今日情话 · FOR YURI",
-                                    fontSize = 11.sp,
-                                    color = TextSub,
-                                    letterSpacing = 1.5.sp,
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
+                    // 左侧蓝色竖线
+                    Box(
+                        modifier = Modifier
+                            .width(3.dp)
+                            .fillMaxHeight()
+                            .background(QuoteBorder, RoundedCornerShape(topStart = 14.dp, bottomStart = 14.dp))
+                            .align(Alignment.CenterStart)
+                    )
+                    Column(
+                        modifier = Modifier.padding(start = 18.dp, end = 16.dp, top = 16.dp, bottom = 14.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "◆",
+                                fontSize = 10.sp,
+                                color = AccentPink,
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "今日情话 · FOR YURI",
+                                fontSize = 11.sp,
+                                color = QuoteBorder,
+                                letterSpacing = 1.sp,
+                            )
+                            Spacer(modifier = Modifier.weight(1f))
                             if (quoteLoading) {
                                 CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
+                                    modifier = Modifier.size(16.dp),
                                     strokeWidth = 2.dp,
-                                    color = AccentBlue,
+                                    color = TextMuted,
                                 )
                             } else {
                                 Text(
-                                    text = if (quote.isNotBlank()) "「$quote」" else "「就算下雨，也想带你去看云。」",
-                                    fontSize = 15.sp,
-                                    color = TextMain,
-                                    fontStyle = FontStyle.Italic,
-                                    lineHeight = 24.sp,
+                                    text = "↻",
+                                    fontSize = 16.sp,
+                                    color = TextMuted,
+                                    modifier = Modifier.clickable { vm.loadQuote(context, forceRefresh = true) }
                                 )
                             }
                         }
-                        // 刷新按钮
-                        IconButton(
-                            onClick = { vm.loadQuote(context, forceRefresh = true) },
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .size(32.dp)
-                        ) {
-                            Text("↻", fontSize = 18.sp, color = TextMuted)
-                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = if (quote.isNotBlank()) "「$quote」" else "「就算下雨，也想带你去看云。」",
+                            fontSize = 14.sp,
+                            color = TextMain,
+                            lineHeight = 22.sp,
+                        )
+                    }
                     }
                 }
             }
 
             // ── 重要的日子 标题 ──
             item {
+                Spacer(modifier = Modifier.height(16.dp))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 22.dp)
-                        .padding(top = 16.dp, bottom = 8.dp),
+                        .padding(horizontal = 20.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         text = "重要的日子",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
                         color = TextMain,
-                        letterSpacing = 1.sp,
                     )
-                    IconButton(
-                        onClick = { showAddDialog = true },
+                    Box(
                         modifier = Modifier
-                            .size(28.dp)
-                            .background(
-                                Color(0x2A64AADC),
-                                shape = CircleShape
-                            )
+                            .size(24.dp)
+                            .background(Color(0xFFE0EAF2), CircleShape)
+                            .clickable { showAddDialog = true },
+                        contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             HugeIcons.Add01,
                             contentDescription = "添加",
-                            tint = AccentBlue,
-                            modifier = Modifier.size(16.dp),
+                            tint = TextSub,
+                            modifier = Modifier.size(14.dp),
                         )
                     }
                 }
+                Spacer(modifier = Modifier.height(12.dp))
             }
 
             // ── 纪念日列表 ──
@@ -389,13 +397,14 @@ fun LovePage() {
 private fun AvatarCircle(
     imagePath: String,
     placeholder: String,
+    gradientColors: List<Color> = listOf(Color(0xFFA8CEF0), Color(0xFF70A8E0)),
     onClick: () -> Unit,
 ) {
     Box(
         modifier = Modifier
-            .size(76.dp)
+            .size(64.dp)
             .clip(CircleShape)
-            .border(2.dp, Color.White.copy(alpha = 0.6f), CircleShape)
+            .border(2.dp, Color.White, CircleShape)
             .clickable { onClick() },
         contentAlignment = Alignment.Center,
     ) {
@@ -412,26 +421,21 @@ private fun AvatarCircle(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(
-                        Brush.linearGradient(
-                            listOf(Color(0xFFA8CEF0), Color(0xFF70A8E0))
-                        )
-                    ),
+                    .background(Brush.linearGradient(gradientColors)),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = placeholder,
-                    fontSize = 28.sp,
+                    fontSize = 22.sp,
                     color = Color.White,
-                    fontWeight = FontWeight.Light,
+                    fontWeight = FontWeight.Normal,
                 )
             }
         }
-
     }
 }
 
-// ── 日期条目 ──────────────────────────────────────────────────────────
+// ── 日期条目（带颜色区分）──────────────────────────────────────────────
 @Composable
 private fun DateItem(
     entity: LoveDateEntity,
@@ -443,18 +447,25 @@ private fun DateItem(
     }.getOrNull()
 
     val daysLeft = targetDate?.let {
-        val diff = ChronoUnit.DAYS.between(today, it).toInt()
-        diff
+        ChronoUnit.DAYS.between(today, it).toInt()
     }
 
-    var showDeleteConfirm by remember { mutableStateOf(false) }
+    val isPast = daysLeft != null && daysLeft < 0
+    val countdownColor = when {
+        daysLeft == null -> TextSub
+        daysLeft <= 7 -> AccentPink
+        daysLeft <= 30 -> AccentBlue
+        daysLeft < 0 -> AccentGold
+        else -> TextSub
+    }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = CardBg),
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .then(if (isPast) Modifier.alpha(0.6f) else Modifier),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = QuoteBg),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Row(
@@ -471,42 +482,47 @@ private fun DateItem(
                     fontWeight = FontWeight.Medium,
                     color = TextMain,
                 )
-                Spacer(modifier = Modifier.height(3.dp))
-                Text(
-                    text = entity.dateStr.replace("-", "."),
-                    fontSize = 12.sp,
-                    color = TextMuted,
-                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .background(Color(0xFFE8F0F8), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "我们",
+                            fontSize = 10.sp,
+                            color = TextSub,
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = entity.dateStr.replace("-", "."),
+                        fontSize = 11.sp,
+                        color = TextMuted,
+                    )
+                }
             }
 
             if (daysLeft != null) {
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
-                        text = when {
-                            daysLeft == 0 -> "今天！"
-                            daysLeft > 0  -> "$daysLeft"
-                            else          -> "${abs(daysLeft)}"
-                        },
-                        fontSize = 30.sp,
-                        fontWeight = FontWeight.Thin,
-                        color = if (daysLeft in 0..7) AccentPink else AccentBlue,
-                        lineHeight = 32.sp,
+                        text = "${abs(daysLeft)}",
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Light,
+                        color = if (isPast) AccentGold else countdownColor,
                     )
                     Text(
-                        text = when {
-                            daysLeft == 0 -> "就是今天"
-                            daysLeft > 0  -> "days left"
-                            else          -> "天前"
-                        },
-                        fontSize = 11.sp,
-                        color = if (daysLeft in 0..7) Color(0xFFF0A8BC) else TextMuted,
+                        text = if (isPast) "days ago" else "days left",
+                        fontSize = 10.sp,
+                        color = TextMuted,
                     )
                 }
             }
 
             IconButton(
-                onClick = { showDeleteConfirm = true },
-                modifier = Modifier.size(28.dp).padding(start = 4.dp)
+                onClick = onDelete,
+                modifier = Modifier.size(28.dp)
             ) {
                 Icon(
                     HugeIcons.Cancel01,
@@ -517,25 +533,9 @@ private fun DateItem(
             }
         }
     }
-
-    if (showDeleteConfirm) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("删除「${entity.label}」？") },
-            confirmButton = {
-                TextButton(onClick = { onDelete(); showDeleteConfirm = false }) {
-                    Text("删除", color = AccentPink)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text("取消") }
-            },
-        )
-    }
 }
 
-// ── 添加纪念日对话框 ──────────────────────────────────────────────────
-@Composable
+
 private fun AddDateDialog(
     onDismiss: () -> Unit,
     onConfirm: (label: String, dateStr: String) -> Unit,
