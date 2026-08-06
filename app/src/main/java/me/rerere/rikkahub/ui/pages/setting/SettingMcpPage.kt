@@ -275,9 +275,14 @@ private fun McpServerItem(
         },
         enableDismissFromStartToEnd = false,
         enableDismissFromEndToStart = true,
-        modifier = modifier
+        modifier = modifier.fillMaxWidth()
     ) {
+        // Card 必须显式撑满宽度：SwipeToDismissBox 的 backgroundContent（取消/删除按钮）
+        // 铺满整个组件宽度，若前景 Card 没有 fillMaxWidth，静止状态下就无法完全盖住
+        // backgroundContent 右侧，导致取消/删除按钮在未滑动时就一直露出来，
+        // 和设置齿轮按钮叠在一起显得很乱。
         Card(
+            modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
                 containerColor = CustomColors.listItemColors.containerColor
             )
