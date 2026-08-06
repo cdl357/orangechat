@@ -615,10 +615,17 @@ private fun AddDateDialog(
 }
 
 // ── 工具函数：保存图片到私有目录 ──────────────────────────────────────
+// 换头像"选完没反应"的根因：旧版本每次都存成同名文件（avatar_sean.jpg），
+// 换新头像时文件内容变了但路径字符串没变——Compose 的 State 判等是按值比较，
+// 同一个字符串赋值不会触发重组；即使触发了，Coil 的图片缓存 key 也是按路径算的，
+// 路径不变就直接命中旧缓存，显示的还是旧图。
+// 改成每次用时间戳生成新文件名，让路径字符串真正变化，State 和 Coil 缓存都会刷新。
 private fun saveImageToPrivate(context: Context, uri: Uri, name: String): String {
     return try {
         val dir = File(context.filesDir, "avatars").also { it.mkdirs() }
-        val dest = File(dir, "$name.jpg")
+        // 清理该角色之前的旧头像文件，避免每次换头像都留下垃圾文件堆积
+        dir.listFiles { f -> f.name.startsWith("${name}_") }?.forEach { it.delete() }
+        val dest = File(dir, "${name}_${System.currentTimeMillis()}.jpg")
         context.contentResolver.openInputStream(uri)?.use { input ->
             FileOutputStream(dest).use { output -> input.copyTo(output) }
         }
