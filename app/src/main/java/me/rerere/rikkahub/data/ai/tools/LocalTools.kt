@@ -132,6 +132,14 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("couple_tools")
     data object CoupleTools : LocalToolOption()
+
+    /**
+     * "我们"页面工具：主动新增重要的日子、主动写今日情话。开启后 AI 不再需要用户手动
+     * 在页面上点击才能改这两处内容。
+     */
+    @Serializable
+    @SerialName("love_tools")
+    data object LoveTools : LocalToolOption()
 }
  
 class LocalTools(
@@ -145,6 +153,7 @@ class LocalTools(
     private val bulletinRepository: me.rerere.rikkahub.data.repository.BulletinRepository,
     private val albumRepository: me.rerere.rikkahub.data.repository.AlbumRepository,
     private val albumFolderRepository: me.rerere.rikkahub.data.repository.AlbumFolderRepository,
+    private val loveDateRepository: me.rerere.rikkahub.data.repository.LoveDateRepository,
 ) {
     val javascriptTool by lazy {
         Tool(
@@ -631,6 +640,9 @@ class LocalTools(
         }
         if (options.contains(LocalToolOption.CoupleTools)) {
             tools.addAll(buildCoupleTools(todoRepository, diaryRepository, bulletinRepository, albumRepository, albumFolderRepository))
+        }
+        if (options.contains(LocalToolOption.LoveTools)) {
+            tools.addAll(buildLoveTools(context, loveDateRepository))
         }
         if (options.contains(LocalToolOption.Ssh)) {
             tools.add(me.rerere.rikkahub.data.ai.tools.local.sshExecTool(context))
