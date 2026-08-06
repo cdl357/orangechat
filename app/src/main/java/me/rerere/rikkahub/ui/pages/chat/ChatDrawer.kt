@@ -344,7 +344,12 @@ fun ChatDrawerContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp)
-                    .alpha(settings.displaySetting.drawerItemAlpha)
+                // 之前这里用 .alpha(drawerItemAlpha) 整体套住这一整排图标：alpha 只影响"看不见"，
+                // 完全不影响"点不点得到"——如果这个透明度滑块被调到很低甚至0，
+                // 菜单/收藏/统计/设置这4个图标就会彻底消失，但点击响应照样在，
+                // 表现正是"能点但是看不见"。侧边栏其他条目（搜索/待办/留言板等）都是只把
+                // drawerItemAlpha 加在背景 Surface 的颜色上，图标文字本身始终不透明，
+                // 所以不受影响。这里改成一致的做法：不整体透明，只透明每个按钮自己的背景。
             ) {
                 Box {
                     DrawerAction(
@@ -357,6 +362,7 @@ fun ChatDrawerContent(
                         onClick = {
                             showMenuPopup = true
                         },
+                        containerAlpha = settings.displaySetting.drawerItemAlpha,
                     )
                     DropdownMenu(
                         expanded = showMenuPopup,
@@ -391,6 +397,7 @@ fun ChatDrawerContent(
                     onClick = {
                         navController.navigate(Screen.Favorite)
                     },
+                    containerAlpha = settings.displaySetting.drawerItemAlpha,
                 )
 
                 DrawerAction(
@@ -403,6 +410,7 @@ fun ChatDrawerContent(
                     onClick = {
                         navController.navigate(Screen.Stats)
                     },
+                    containerAlpha = settings.displaySetting.drawerItemAlpha,
                 )
 
                 DrawerAction(
@@ -413,6 +421,7 @@ fun ChatDrawerContent(
                     onClick = {
                         navController.navigate(Screen.Setting)
                     },
+                    containerAlpha = settings.displaySetting.drawerItemAlpha,
                 )
             }
         }
@@ -765,11 +774,15 @@ private fun DrawerAction(
     icon: @Composable () -> Unit,
     label: @Composable () -> Unit,
     onClick: () -> Unit,
+    // 只透明背景色，不透明图标本身，避免透明度调低时图标/文字被一起隐藏到看不见
+    // （之前是外层 Row 整体 .alpha()，会连图标一起消失，但点击响应不受影响，
+    // 表现为"按钮能点但看不见"）。
+    containerAlpha: Float = 1f,
 ) {
     Surface(
         onClick = onClick,
         modifier = modifier,
-        color = MaterialTheme.colorScheme.primaryContainer,
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = containerAlpha),
         shape = CircleShape,
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
