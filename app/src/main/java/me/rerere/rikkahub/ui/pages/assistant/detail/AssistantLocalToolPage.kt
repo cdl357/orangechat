@@ -255,6 +255,23 @@ private fun AssistantLocalToolContent(
                 }
             )
             item(
+                headlineContent = { Text("\"我们\"页面工具") },
+                supportingContent = { Text("允许 AI 主动新增重要的日子、主动写今日情话，不用你手动点页面才能改") },
+                trailingContent = {
+                    Switch(
+                        checked = assistant.localTools.contains(LocalToolOption.LoveTools),
+                        onCheckedChange = {
+                            val newLocalTools = if (it) {
+                                assistant.localTools + LocalToolOption.LoveTools
+                            } else {
+                                assistant.localTools - LocalToolOption.LoveTools
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            )
+            item(
                 headlineContent = { Text("SSH 远程连接") },
                 supportingContent = { Text("远程执行命令、SFTP 上传下载、保存主机凭据") },
                 trailingContent = {
