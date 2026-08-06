@@ -123,6 +123,19 @@ fun RikkahubTheme(
         }
         val interfaceSurfaceAlpha =
             (settings.displaySetting.interfaceSurfaceOpacity / 100f).coerceIn(0f, 0.95f)
+        // "弹出界面不透明度"（popupSurfaceOpacity）这个设置项此前只在4个手动调用了
+        // popupContainerColor() 的地方生效（ChatInput/CompressContextDialog/McpPicker/
+        // ChatMessageTools），全 App 其余 40+ 处直接用 androidx.compose.material3.AlertDialog(...)
+        // 的地方，走的是 Material3 默认容器色 AlertDialogDefaults.containerColor，
+        // 这个默认值取自 colorScheme.surfaceContainerHigh —— 而这个 token 之前跟 surface/
+        // surfaceContainer 等普通界面容器一起被"界面材质不透明度"（interfaceSurfaceAlpha）统一压低了。
+        // 结果就是：用户把"弹出界面不透明度"调到100%完全没用，因为AlertDialog根本没读那个值，
+        // 读的是被另一个滑块（界面材质不透明度）压低的 surfaceContainerHigh。
+        // 全项目搜索确认 surfaceContainerHigh/Highest 在业务代码里零处被直接引用，
+        // 只被 Material3 组件默认值（主要是 AlertDialog）内部消费，改动不会影响卡片等其他UI，
+        // 因此把这两个 token 的透明度来源换成 popupSurfaceOpacity，让"弹出界面不透明度"
+        // 这个滑块真正管住所有默认样式的 AlertDialog（新建文件夹/重命名/删除确认等）。
+        val popupAlpha = (settings.displaySetting.popupSurfaceOpacity / 100f).coerceIn(0.6f, 1f)
         // 直接覆盖容器 token 的 alpha，保留 RGB，避免与主题或组件已有 alpha 相乘。
         // background 保持不透明，使聊天页外层 Surface 能完整隔离导航根部的设置背景。
         scheme = scheme.copy(
@@ -132,8 +145,8 @@ fun RikkahubTheme(
             surfaceContainerLowest = scheme.surfaceContainerLowest.copy(alpha = interfaceSurfaceAlpha),
             surfaceContainerLow = scheme.surfaceContainerLow.copy(alpha = interfaceSurfaceAlpha),
             surfaceContainer = scheme.surfaceContainer.copy(alpha = interfaceSurfaceAlpha),
-            surfaceContainerHigh = scheme.surfaceContainerHigh.copy(alpha = interfaceSurfaceAlpha),
-            surfaceContainerHighest = scheme.surfaceContainerHighest.copy(alpha = interfaceSurfaceAlpha),
+            surfaceContainerHigh = scheme.surfaceContainerHigh.copy(alpha = popupAlpha),
+            surfaceContainerHighest = scheme.surfaceContainerHighest.copy(alpha = popupAlpha),
             surfaceVariant = scheme.surfaceVariant.copy(alpha = interfaceSurfaceAlpha),
         )
         if (settings.themeId == "pearltide") {
