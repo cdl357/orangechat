@@ -291,3 +291,4 @@ private fun AssistantLocalToolContent(
         }
     }
 }
+// rebuild-trigger: ensure latest release reflects LoveTools toggle (fix race with previous concurrent build)
