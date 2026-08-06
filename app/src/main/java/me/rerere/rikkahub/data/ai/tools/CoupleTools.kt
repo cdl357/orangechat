@@ -106,6 +106,61 @@ fun buildCoupleTools(
         }
     ),
 
+    // ── 待办：读取当前的待办列表 ──────────────────────────
+    Tool(
+        name = "list_todos",
+        description = """
+            List current todo/reminder items so you can actually see what's on the list —
+            without this, you only know about todos you wrote yourself in this session and
+            have no way to read ones she added, or ones from earlier conversations.
+            Use this when she asks "what's on my todo list", mentions a reminder you might have
+            forgotten, or before adding a new todo to avoid duplicating one that already exists.
+            done_filter: "active" (default, unfinished only), "done", or "all".
+        """.trimIndent().replace("\n", " "),
+        parameters = {
+            InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("done_filter", buildJsonObject {
+                        put("type", "string")
+                        put("enum", buildJsonArray { add("active"); add("done"); add("all") })
+                        put("description", "Which todos to include, default active")
+                    })
+                    put("limit", buildJsonObject {
+                        put("type", "integer")
+                        put("description", "Max items to return, default 30")
+                    })
+                },
+                required = emptyList()
+            )
+        },
+        execute = {
+            val params = it.jsonObject
+            val doneFilter = params["done_filter"]?.jsonPrimitive?.contentOrNull ?: "active"
+            val limit = params["limit"]?.jsonPrimitive?.intOrNull ?: 30
+            val all = todoRepository.observeAll().first()
+            val filtered = when (doneFilter) {
+                "done" -> all.filter { t -> t.done }
+                "all" -> all
+                else -> all.filter { t -> !t.done }
+            }
+            val payload = buildJsonArray {
+                filtered.take(limit).forEach { t ->
+                    add(buildJsonObject {
+                        put("id", t.id)
+                        put("content", t.content)
+                        put("done", t.done)
+                        put("author", t.author)
+                        put("target", t.target)
+                        put("reminder_time", t.reminderTime)
+                        put("repeat_mode", t.repeatMode)
+                        put("created_at", t.createdAt)
+                    })
+                }
+            }
+            listOf(UIMessagePart.Text(payload.toString()))
+        }
+    ),
+
     // ── 日记：主动写一篇日记 ──────────────────────────
     Tool(
         name = "write_diary",
@@ -178,6 +233,55 @@ fun buildCoupleTools(
         }
     ),
 
+    // ── 日记：读取已写过的日记 ──────────────────────────
+    Tool(
+        name = "list_diary_entries",
+        description = """
+            Read diary entries that have already been written (by you, or dictated by her in her
+            own voice). Without this you have no way to recall what past entries said —
+            you'd only remember what happened in the current chat session.
+            Use this when she references something you wrote before, or you want to check
+            what you've already recorded before writing a new entry (avoid repeating yourself).
+            author: filter by "sean" or "yuri", omit for both.
+        """.trimIndent().replace("\n", " "),
+        parameters = {
+            InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("author", buildJsonObject {
+                        put("type", "string")
+                        put("enum", buildJsonArray { add("sean"); add("yuri") })
+                        put("description", "Filter by author, omit for both")
+                    })
+                    put("limit", buildJsonObject {
+                        put("type", "integer")
+                        put("description", "Max entries to return, most recent first, default 20")
+                    })
+                },
+                required = emptyList()
+            )
+        },
+        execute = {
+            val params = it.jsonObject
+            val author = params["author"]?.jsonPrimitive?.contentOrNull
+            val limit = params["limit"]?.jsonPrimitive?.intOrNull ?: 20
+            val all = diaryRepository.observeAll().first()
+            val filtered = if (author != null) all.filter { d -> d.author == author } else all
+            val payload = buildJsonArray {
+                filtered.take(limit).forEach { d ->
+                    add(buildJsonObject {
+                        put("id", d.id)
+                        put("title", d.title)
+                        put("content", d.content)
+                        put("author", d.author)
+                        put("date_group", d.dateGroup)
+                        put("created_at", d.createdAt)
+                    })
+                }
+            }
+            listOf(UIMessagePart.Text(payload.toString()))
+        }
+    ),
+
     // ── 留言板：贴一张便利贴 ──────────────────────────
     Tool(
         name = "post_bulletin_note",
@@ -213,6 +317,45 @@ fun buildCoupleTools(
         }
     ),
 
+    // ── 留言板：读取便利贴 ──────────────────────────
+    Tool(
+        name = "list_bulletin_notes",
+        description = """
+            Read notes on the shared bulletin board, most recent first.
+            Without this you have no way to see what she (or you, in an earlier session) posted —
+            you'd need a screenshot to know what's on the board, which defeats the point of it.
+            Use this when she references "what I wrote on the board", or before posting a new
+            note to check what's already there.
+        """.trimIndent().replace("\n", " "),
+        parameters = {
+            InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("limit", buildJsonObject {
+                        put("type", "integer")
+                        put("description", "Max notes to return, default 20")
+                    })
+                },
+                required = emptyList()
+            )
+        },
+        execute = {
+            val limit = it.jsonObject["limit"]?.jsonPrimitive?.intOrNull ?: 20
+            val list = bulletinRepository.observeAll().first()
+            val payload = buildJsonArray {
+                list.take(limit).forEach { n ->
+                    add(buildJsonObject {
+                        put("id", n.id)
+                        put("content", n.content)
+                        put("author", n.author)
+                        put("collapsed", n.collapsed)
+                        put("created_at", n.createdAt)
+                    })
+                }
+            }
+            listOf(UIMessagePart.Text(payload.toString()))
+        }
+    ),
+
     // ── 相册：浏览已存的照片 ──────────────────────────
     Tool(
         name = "list_album_photos",
@@ -220,6 +363,7 @@ fun buildCoupleTools(
             List photos saved in the shared album, most recent first.
             Use this before sharing an old photo — to recall what you have and pick one that fits
             the moment (e.g. when you miss her, or a memory surfaces naturally in conversation).
+            Optionally filter by folder_name to only see photos in one specific album.
         """.trimIndent().replace("\n", " "),
         parameters = {
             InputSchema.Obj(
@@ -228,24 +372,62 @@ fun buildCoupleTools(
                         put("type", "integer")
                         put("description", "Max photos to return, default 20")
                     })
+                    put("folder_name", buildJsonObject {
+                        put("type", "string")
+                        put("description", "Optional: only list photos in this album name")
+                    })
                 },
                 required = emptyList()
             )
         },
         execute = {
             val limit = it.jsonObject["limit"]?.jsonPrimitive?.intOrNull ?: 20
-            val photos = albumRepository.observeAll()
-            // Room Flow -> take first emission synchronously via runBlocking-free approach:
-            // repository exposes Flow, so collect first value.
-            val list = photos.first()
+            val folderName = it.jsonObject["folder_name"]?.jsonPrimitive?.contentOrNull
+            val list = albumRepository.observeAll().first()
+            val folders = albumFolderRepository.observeAll().first()
+            val folderNameById = folders.associate { f -> f.id to f.name }
+            val filtered = if (folderName != null) {
+                val targetId = folders.firstOrNull { f -> f.name == folderName }?.id
+                list.filter { p -> p.folderId == targetId }
+            } else list
             val payload = buildJsonArray {
-                list.take(limit).forEach { p ->
+                filtered.take(limit).forEach { p ->
                     add(buildJsonObject {
                         put("id", p.id)
                         put("caption", p.caption)
                         put("saved_by", p.savedBy)
                         put("file_path", p.filePath)
+                        put("folder_name", folderNameById[p.folderId] ?: "未分类")
                         put("created_at", p.createdAt)
+                    })
+                }
+            }
+            listOf(UIMessagePart.Text(payload.toString()))
+        }
+    ),
+
+    // ── 相册：查看有哪些相册本子 ──────────────────────────
+    Tool(
+        name = "list_album_folders",
+        description = """
+            List existing album folders (named "books" of photos) with their photo counts.
+            Use this before create_album_folder to check if an album with that name already
+            exists, or before save_to_album/list_album_photos to see what albums are available.
+        """.trimIndent().replace("\n", " "),
+        parameters = {
+            InputSchema.Obj(properties = buildJsonObject {}, required = emptyList())
+        },
+        execute = {
+            val folders = albumFolderRepository.observeAll().first()
+            val items = albumRepository.observeAll().first()
+            val payload = buildJsonArray {
+                folders.forEach { f ->
+                    add(buildJsonObject {
+                        put("id", f.id)
+                        put("name", f.name)
+                        put("created_by", f.createdBy)
+                        put("photo_count", items.count { p -> p.folderId == f.id })
+                        put("created_at", f.createdAt)
                     })
                 }
             }
