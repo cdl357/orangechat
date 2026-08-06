@@ -45,3 +45,12 @@
 -keepattributes Signature, InnerClasses, EnclosingMethod
 -keep class com.fasterxml.jackson.** { *; }
 -keep class com.auth0.jwt.** { *; }
+
+# jsch (SSH 工具依赖 com.github.mwiede:jsch，包名仍是 com.jcraft.jsch)：
+# 库内部通过 Class.forName 反射加载具体的随机数/加密/密钥交换算法实现类
+# （如 com.jcraft.jsch.jce.Random），R8 静态分析不到这类反射引用，默认会把
+# 这些"看起来没被用到"的实现类连同其构造方法一起裁掉/改名，导致运行时
+# java.lang.ClassNotFoundException: com.jcraft.jsch.jce.Random。
+# 保留整个包，避免被裁剪或混淆。
+-keep class com.jcraft.jsch.** { *; }
+-dontwarn com.jcraft.jsch.**
