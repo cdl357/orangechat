@@ -75,12 +75,19 @@ function renderContentPart(
   t: (key: string, options?: Record<string, unknown>) => string,
   loading?: boolean,
   onClickCitation?: (id: string) => void,
+  imageContext?: { urls: string[]; index: number },
 ) {
   switch (part.type) {
     case "text":
       return <TextPart text={part.text} isAnimating={loading} onClickCitation={onClickCitation} />;
     case "image":
-      return <ImagePart url={part.url} />;
+      return (
+        <ImagePart
+          url={part.url}
+          siblingImages={imageContext?.urls}
+          siblingIndex={imageContext?.index}
+        />
+      );
     case "video":
       return <VideoPart url={part.url} />;
     case "audio":
@@ -106,6 +113,24 @@ export const MessageParts = React.memo(({
 }: MessagePartsProps) => {
   const { t } = useTranslation("message");
   const groupedParts = React.useMemo(() => groupMessageParts(parts), [parts]);
+
+  // 同一条消息里所有图片 part 的 url 列表 + 每个 part.index 对应的图片下标，
+  // 这样点开任意一张图都能在灯箱里左右滑动看到这条消息的其它图片。
+  const imageUrls = React.useMemo(
+    () => parts.filter((part): part is Extract<UIMessagePart, { type: "image" }> => part.type === "image").map((part) => part.url),
+    [parts],
+  );
+  const imageIndexByPartIndex = React.useMemo(() => {
+    const map = new Map<number, number>();
+    let imageCount = 0;
+    parts.forEach((part, index) => {
+      if (part.type === "image") {
+        map.set(index, imageCount);
+        imageCount += 1;
+      }
+    });
+    return map;
+  }, [parts]);
 
   return (
     <>
@@ -159,9 +184,15 @@ export const MessageParts = React.memo(({
           );
         }
 
+        const imageIndex = imageIndexByPartIndex.get(block.index);
+        const imageContext =
+          block.part.type === "image" && imageIndex != null
+            ? { urls: imageUrls, index: imageIndex }
+            : undefined;
+
         return (
           <React.Fragment key={`content-${block.index}`}>
-            {renderContentPart(block.part, t, loading, onClickCitation)}
+            {renderContentPart(block.part, t, loading, onClickCitation, imageContext)}
           </React.Fragment>
         );
       })}
