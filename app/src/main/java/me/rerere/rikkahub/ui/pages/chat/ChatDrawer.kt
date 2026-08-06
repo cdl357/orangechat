@@ -11,6 +11,8 @@ import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -221,7 +223,18 @@ fun ChatDrawerContent(
             }
 
             Column(
-                modifier = Modifier.padding(8.dp),
+                modifier = Modifier.fillMaxSize().padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+            // 情侣工具入口从4个扩到7个（待办/日记/留言板/相册/潮汐/朋友圈/我们）后，
+            // 内容总高度超过了侧边栏可用高度，而这个 Column 本身不能滚动，
+            // 直接把底部的设置/统计/收藏/菜单那一整行图标挤出屏幕看不见了。
+            // 把"会变长"的内容（更新卡片/头像区/工具入口）单独放进可滚动区域，
+            // 助手选择器和底部图标行固定在滚动区域外，始终可见。
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
             if (settings.displaySetting.showUpdates && !isPlayStore) {
@@ -299,8 +312,7 @@ fun ChatDrawerContent(
                 navController = navController,
                 drawerItemAlpha = settings.displaySetting.drawerItemAlpha,
             )
-
-            Spacer(Modifier.weight(1f))
+            }
 
             // 助手选择器
             AssistantPicker(
