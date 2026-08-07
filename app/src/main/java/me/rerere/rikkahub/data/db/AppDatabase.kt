@@ -36,6 +36,7 @@ import me.rerere.rikkahub.data.db.entity.DiaryEntity
 import me.rerere.rikkahub.data.db.entity.AlbumEntity
 import me.rerere.rikkahub.data.db.entity.AlbumFolderEntity
 import me.rerere.rikkahub.data.db.entity.LoveDateEntity
+import me.rerere.rikkahub.data.db.entity.StickerEntity
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.db.dao.SshHostDao
 import me.rerere.rikkahub.data.db.dao.TodoDAO
@@ -44,6 +45,7 @@ import me.rerere.rikkahub.data.db.dao.DiaryDAO
 import me.rerere.rikkahub.data.db.dao.AlbumDAO
 import me.rerere.rikkahub.data.db.dao.AlbumFolderDAO
 import me.rerere.rikkahub.data.db.dao.LoveDateDAO
+import me.rerere.rikkahub.data.db.dao.StickerDAO
 import me.rerere.rikkahub.data.security.SecurityAuditDao
 import me.rerere.rikkahub.data.security.SecurityAuditEntity
 import me.rerere.rikkahub.workflow.db.WorkflowDao
@@ -55,6 +57,7 @@ import me.rerere.rikkahub.data.db.migrations.Migration_24_25
 import me.rerere.rikkahub.data.db.migrations.Migration_33_34
 import me.rerere.rikkahub.data.db.migrations.Migration_34_35
 import me.rerere.rikkahub.data.db.migrations.Migration_35_36
+import me.rerere.rikkahub.data.db.migrations.Migration_36_37
 import me.rerere.rikkahub.data.db.migrations.Migration_8_9
 import me.rerere.rikkahub.utils.JsonInstant
 
@@ -79,8 +82,9 @@ import me.rerere.rikkahub.utils.JsonInstant
         AlbumEntity::class,
         AlbumFolderEntity::class,
         LoveDateEntity::class,
+        StickerEntity::class,
     ],
-    version = 36,
+    version = 37,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -143,6 +147,7 @@ abstract class AppDatabase : RoomDatabase() {
 
     abstract fun albumFolderDao(): AlbumFolderDAO
     abstract fun loveDateDao(): LoveDateDAO
+    abstract fun stickerDao(): StickerDAO
 }
 
 object TokenUsageConverter {
