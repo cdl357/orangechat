@@ -228,6 +228,11 @@ private fun AddStickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        // dismissOnClickOutside 默认 true：部分设备上点击输入框弹出键盘时，系统会把
+        // 键盘弹出过程中的窗口尺寸变化误判成"点击了对话框外部"，导致对话框在你刚点进
+        // 输入框、还没来得及打字时就自动关闭（表现就是"点进去就闪退回表情包面板"）。
+        // 关掉这个属性，只允许点取消/保存按钮关闭，从根上避免这个误触发。
+        properties = androidx.compose.ui.window.DialogProperties(dismissOnClickOutside = false),
         containerColor = androidx.compose.ui.graphics.Color.White,
         title = { Text("添加表情包") },
         text = {
