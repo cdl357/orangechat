@@ -198,6 +198,11 @@ fun ChatInput(
     var expand by remember { mutableStateOf(ExpandState.Collapsed) }
     var showInjectionSheet by remember { mutableStateOf(false) }
     var showCompressDialog by remember { mutableStateOf(false) }
+    // 表情包"添加"弹窗里的名字/标签输入框会弹出键盘，必须和 showInjectionSheet/
+    // showCompressDialog 一样加入排除名单，否则下面那个"键盘弹出就收起展开面板"的
+    // LaunchedEffect 会把整个 Stickers 面板连同这个内嵌弹窗一起强制关掉，
+    // 表现就是"刚点进输入框就被弹回表情包面板"。
+    var showStickerAddDialog by remember { mutableStateOf(false) }
     fun dismissExpand() {
         expand = ExpandState.Collapsed
         showInjectionSheet = false
@@ -489,8 +494,8 @@ fun ChatInput(
 
     // Collapse when ime is visible
     val imeVisile = WindowInsets.isImeVisible
-    LaunchedEffect(imeVisile, showInjectionSheet, showCompressDialog) {
-        if (imeVisile && !showInjectionSheet && !showCompressDialog) {
+    LaunchedEffect(imeVisile, showInjectionSheet, showCompressDialog, showStickerAddDialog) {
+        if (imeVisile && !showInjectionSheet && !showCompressDialog && !showStickerAddDialog) {
             dismissExpand()
         }
     }
@@ -876,6 +881,7 @@ fun ChatInput(
                                 state.messageContent = state.messageContent + part
                                 dismissExpand()
                             },
+                            onAddDialogVisibleChange = { showStickerAddDialog = it },
                         )
                     }
                 }
