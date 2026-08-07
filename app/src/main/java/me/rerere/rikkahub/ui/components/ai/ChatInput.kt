@@ -107,6 +107,7 @@ import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.ArrowUp02
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.FullScreen
+import me.rerere.hugeicons.stroke.Smile
 import me.rerere.hugeicons.stroke.Voice
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
@@ -145,7 +146,7 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
 
 enum class ExpandState {
-    Collapsed, Files,
+    Collapsed, Files, Stickers,
 }
 
 @Composable
@@ -688,6 +689,17 @@ fun ChatInput(
                                 )
                             }
 
+                            // Sticker picker button: shared sticker library (人机共享表情包库)
+                            ActionIconButton(
+                                onClick = {
+                                    expandToggle(ExpandState.Stickers)
+                                }) {
+                                Icon(
+                                    imageVector = if (expand == ExpandState.Stickers) HugeIcons.Cancel01 else HugeIcons.Smile,
+                                    contentDescription = "表情包"
+                                )
+                            }
+
                             // Voice button: click to record, click again to stop and send
                             // 通话进行中禁用, 避免两路麦克风冲突
                             if ((asrState.isAvailable || asrState.isRecording) && !isVoiceCallActive) {
@@ -835,6 +847,35 @@ fun ChatInput(
                             onPickVideo = { videoPickerLauncher.launch("video/*") },
                             onPickAudio = { audioPickerLauncher.launch("audio/*") },
                             onPickFile = { filePickerLauncher.launch(arrayOf("*/*")) },
+                        )
+                    }
+                }
+                if (expand == ExpandState.Stickers) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(20.dp))
+                            .then(
+                                if (useRealtimeBlur) Modifier.hazeEffect(
+                                    state = hazeState,
+                                    style = HazeMaterials.ultraThin()
+                                )
+                                else Modifier
+                            ),
+                        shape = RoundedCornerShape(20.dp),
+                        tonalElevation = 0.dp,
+                        color = if (useRealtimeBlur) {
+                            Color.Transparent
+                        } else {
+                            popupContainerColor(hazeTintColor)
+                        },
+                    ) {
+                        StickerPicker(
+                            onStickerPicked = { part ->
+                                // 表情包插入到输入框，可以和文字一起发出去（不直接发送）
+                                state.messageContent = state.messageContent + part
+                                dismissExpand()
+                            },
                         )
                     }
                 }
