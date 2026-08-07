@@ -69,6 +69,7 @@ import java.util.UUID
 fun StickerPicker(
     modifier: Modifier = Modifier,
     onStickerPicked: (UIMessagePart) -> Unit,
+    onAddDialogVisibleChange: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     val repository: StickerRepository = koinInject()
@@ -81,6 +82,7 @@ fun StickerPicker(
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
             pendingUri = uri
+            onAddDialogVisibleChange(true)
         }
     }
 
@@ -149,7 +151,10 @@ fun StickerPicker(
     val uri = pendingUri
     if (uri != null) {
         AddStickerDialog(
-            onDismiss = { pendingUri = null },
+            onDismiss = {
+                pendingUri = null
+                onAddDialogVisibleChange(false)
+            },
             onConfirm = { name, tags ->
                 scope.launch {
                     val filePath = saveStickerToPrivate(context, uri)
@@ -165,6 +170,7 @@ fun StickerPicker(
                     }
                 }
                 pendingUri = null
+                onAddDialogVisibleChange(false)
             }
         )
     }
