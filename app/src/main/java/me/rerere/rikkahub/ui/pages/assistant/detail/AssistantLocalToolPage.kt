@@ -272,6 +272,23 @@ private fun AssistantLocalToolContent(
                 }
             )
             item(
+                headlineContent = { Text("共享表情包库") },
+                supportingContent = { Text("允许 AI 看到人机共享的表情包库(名字+标签)并主动发送，不只是被动等你在面板里点") },
+                trailingContent = {
+                    Switch(
+                        checked = assistant.localTools.contains(LocalToolOption.StickerTools),
+                        onCheckedChange = {
+                            val newLocalTools = if (it) {
+                                assistant.localTools + LocalToolOption.StickerTools
+                            } else {
+                                assistant.localTools - LocalToolOption.StickerTools
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            )
+            item(
                 headlineContent = { Text("SSH 远程连接") },
                 supportingContent = { Text("远程执行命令、SFTP 上传下载、保存主机凭据") },
                 trailingContent = {
