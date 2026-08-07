@@ -91,8 +91,12 @@ fun StickerPicker(
             .padding(12.dp),
     ) {
         if (stickers.isEmpty()) {
+            // 注意：这里必须用 weight(1f) 而不是 fillMaxSize()。
+            // Column 按顺序测量子项，fillMaxSize() 会让这个空状态提示占满整个 320dp 高度，
+            // 导致排在它后面的"+"添加按钮（Surface）被挤压到 0 高度、彻底不可见——
+            // 这就是"没有表情包时看不到+号"的根因。weight(1f) 能让它和下面的按钮正确分享空间。
             Box(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxWidth().weight(1f),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
