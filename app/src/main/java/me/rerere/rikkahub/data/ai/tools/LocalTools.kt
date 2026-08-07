@@ -140,6 +140,14 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("love_tools")
     data object LoveTools : LocalToolOption()
+
+    /**
+     * 共享表情包库：list_stickers / send_sticker。开启后 AI 可以看到人机共享的表情包库
+     * (名字+标签)，并挑一张主动发出去，不只是被动等着用户在面板里点。
+     */
+    @Serializable
+    @SerialName("sticker_tools")
+    data object StickerTools : LocalToolOption()
 }
  
 class LocalTools(
@@ -154,6 +162,7 @@ class LocalTools(
     private val albumRepository: me.rerere.rikkahub.data.repository.AlbumRepository,
     private val albumFolderRepository: me.rerere.rikkahub.data.repository.AlbumFolderRepository,
     private val loveDateRepository: me.rerere.rikkahub.data.repository.LoveDateRepository,
+    private val stickerRepository: me.rerere.rikkahub.data.repository.StickerRepository,
 ) {
     val javascriptTool by lazy {
         Tool(
@@ -643,6 +652,9 @@ class LocalTools(
         }
         if (options.contains(LocalToolOption.LoveTools)) {
             tools.addAll(buildLoveTools(context, loveDateRepository))
+        }
+        if (options.contains(LocalToolOption.StickerTools)) {
+            tools.addAll(buildStickerTools(stickerRepository))
         }
         if (options.contains(LocalToolOption.Ssh)) {
             tools.add(me.rerere.rikkahub.data.ai.tools.local.sshExecTool(context))
