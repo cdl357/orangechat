@@ -228,6 +228,8 @@ private suspend fun executeProactiveCheck(
     
     val providerImpl = providerManager.getProviderByType(providerSetting)
     
+    Log.d(TAG, "Calling streamText with ${mergedMessages.size} messages")
+    Log.d(TAG, "Provider: ${providerSetting::class.simpleName}, Model: ${model.id}")
     var streamMessages = mergedMessages.toMutableList()
     providerImpl.streamText(
         providerSetting = providerSetting,
@@ -237,6 +239,7 @@ private suspend fun executeProactiveCheck(
         streamMessages = streamMessages.handleMessageChunk(chunk).toMutableList()
     }
     
+    Log.d(TAG, "streamText finished, streamMessages size: ${streamMessages.size}")
     val aiResponse = streamMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
         ?.parts
         ?.filterIsInstance<UIMessagePart.Text>()
