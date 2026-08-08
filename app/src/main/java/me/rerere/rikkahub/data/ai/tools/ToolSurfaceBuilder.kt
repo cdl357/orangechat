@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
@@ -11,13 +11,17 @@ import kotlinx.serialization.json.Json
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessage
 import kotlinx.serialization.json.jsonObject
+import me.rerere.ai.provider.ProviderManager
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.files.SkillManager
+import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.plugin.provider.PluginToolProvider
+import me.rerere.rikkahub.service.ChatService
 
 /**
  * Builds the full tool surface for an assistant: search + local + system + workspace + skill
@@ -40,6 +44,10 @@ class ToolSurfaceBuilder(
     private val workspaceRepository: WorkspaceRepository,
     private val json: Json,
     private val memoryRepository: MemoryRepository,
+    private val settingsStore: SettingsStore,
+    private val conversationRepository: ConversationRepository,
+    private val providerManager: ProviderManager,
+    private val chatService: ChatService,
 ) {
     suspend fun build(
         assistant: me.rerere.rikkahub.data.model.Assistant,
@@ -88,5 +96,15 @@ class ToolSurfaceBuilder(
             )
         }
         addAll(pluginToolProvider.getTools())
+        
+        // 智能查岗工具 (用于 workflow，让 AI 自主判断是否发消息)
+        add(createProactiveCheckTool(
+            context = context,
+            settingsStore = settingsStore,
+            conversationRepository = conversationRepository,
+            memoryRepository = memoryRepository,
+            providerManager = providerManager,
+            chatService = chatService,
+        ))
     }
 }

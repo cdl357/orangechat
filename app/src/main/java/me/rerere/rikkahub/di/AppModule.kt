@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
@@ -79,20 +79,6 @@ val appModule = module {
     single { me.rerere.rikkahub.data.qq.QqBotClient(get()) }
 
     single {
-        me.rerere.rikkahub.data.ai.tools.ToolSurfaceBuilder(
-            context = get(),
-            localTools = get(),
-            mcpManager = get(),
-            filesManager = get(),
-            skillManager = get(),
-            pluginToolProvider = get(),
-            workspaceRepository = get(),
-            json = get(),
-            memoryRepository = get(),
-        )
-    }
-
-    single {
         UpdateChecker(get())
     }
 
@@ -143,6 +129,25 @@ val appModule = module {
             workspaceRepository = get(),
             memoryBankService = get(),
             folderRepository = get(),
+        )
+    }
+
+    // ToolSurfaceBuilder 需要在 ChatService 之后创建，因为它依赖 ChatService
+    single {
+        me.rerere.rikkahub.data.ai.tools.ToolSurfaceBuilder(
+            context = get(),
+            localTools = get(),
+            mcpManager = get(),
+            filesManager = get(),
+            skillManager = get(),
+            pluginToolProvider = get(),
+            workspaceRepository = get(),
+            json = get(),
+            memoryRepository = get(),
+            settingsStore = get(),
+            conversationRepository = get(),
+            providerManager = get(),
+            chatService = get(),
         )
     }
 
