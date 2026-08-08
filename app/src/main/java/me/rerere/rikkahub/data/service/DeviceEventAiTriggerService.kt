@@ -448,14 +448,14 @@ class DeviceEventAiTriggerService : Service() {
                     ?.filter { it.isNotBlank() && !it.contains("[PASS]") }
                 if (!recentAiMsgs.isNullOrEmpty()) {
                     sb.appendLine()
-                    sb.appendLine("你最近发过的消息（绝对不要重复这些内容或话题，必须换新话题）:")
+                    sb.appendLine("你最近发过的消息（尽量别重复一样的内容或话题）:")
                     recentAiMsgs.forEachIndexed { i, msg -> sb.appendLine("  ${i + 1}. ${msg.take(60)}") }
                 }
                 val lastMessage = conv?.messageNodes?.lastOrNull()?.messages?.lastOrNull()
                 if (lastMessage != null && lastMessage.role == MessageRole.ASSISTANT) {
                     sb.appendLine()
-                    sb.appendLine("⚠️ 特别注意：上一条消息是你自己发的，用户到现在还没回复你。")
-                    sb.appendLine("这次绝对不要接着上一个话题说、不要重复问一样的问题，必须换成一个全新的话题。")
+                    sb.appendLine("提示：上一条消息是你自己发的，用户到现在还没回复。")
+                    sb.appendLine("尽量换个新话题会更自然，但如果实在没什么新的可说，正常关心一下也完全可以，不用为了\"必须全新\"而硬憋话题或者选择不说话。")
                     sb.appendLine("具体用什么语气、说什么内容，完全按你的人设自己判断，不要套模板。")
                 }
             }
