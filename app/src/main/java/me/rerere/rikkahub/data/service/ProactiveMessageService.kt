@@ -254,7 +254,7 @@ class ProactiveMessageService : KoinComponent {
         sb.appendLine()
         sb.appendLine("请根据以上上下文，以自然、关心、有趣的方式主动给用户发一条消息。")
         sb.appendLine()
-        // 注入最近的AI主动消息，让AI知道之前说了什么
+        // 注入最近的AI主动消息 + 判断"用户是不是没回上一条"，让AI知道之前说了什么、该不该换话题
         try {
             val assistantId = settings.assistants.find { it.id.toString() == settings.proactiveMessageSetting.assistantId }?.id ?: settings.getCurrentAssistant().id
             val recentConvs = conversationRepository.getRecentConversations(assistantId, limit = 1)
@@ -269,8 +269,16 @@ class ProactiveMessageService : KoinComponent {
                     ?.filter { it.isNotBlank() && !it.contains("[PASS]") }
                 if (!recentAiMsgs.isNullOrEmpty()) {
                     sb.appendLine()
-                    sb.appendLine("你最近发过的消息（绝对不要重复这些内容，必须换新话题）:")
+                    sb.appendLine("你最近发过的消息（绝对不要重复这些内容或话题，必须换新话题）:")
                     recentAiMsgs.forEachIndexed { i, msg -> sb.appendLine("  ${i+1}. ${msg.take(60)}") }
+                }
+                // 判断最后一条消息是不是AI自己发的（说明用户一直没回）
+                val lastMessage = conv?.messageNodes?.lastOrNull()?.messages?.lastOrNull()
+                if (lastMessage != null && lastMessage.role == MessageRole.ASSISTANT) {
+                    sb.appendLine()
+                    sb.appendLine("⚠️ 特别注意：上一条消息是你自己发的，用户到现在还没回复你。")
+                    sb.appendLine("这次绝对不要接着上一个话题说、不要重复问一样的问题，必须换成一个全新的话题。")
+                    sb.appendLine("具体用什么语气、说什么内容，完全按你的人设自己判断，不要套模板。")
                 }
             }
         } catch (e: Exception) {
