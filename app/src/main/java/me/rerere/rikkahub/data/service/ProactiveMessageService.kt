@@ -269,15 +269,15 @@ class ProactiveMessageService : KoinComponent {
                     ?.filter { it.isNotBlank() && !it.contains("[PASS]") }
                 if (!recentAiMsgs.isNullOrEmpty()) {
                     sb.appendLine()
-                    sb.appendLine("你最近发过的消息（绝对不要重复这些内容或话题，必须换新话题）:")
+                    sb.appendLine("你最近发过的消息（尽量别重复一样的内容或话题）:")
                     recentAiMsgs.forEachIndexed { i, msg -> sb.appendLine("  ${i+1}. ${msg.take(60)}") }
                 }
                 // 判断最后一条消息是不是AI自己发的（说明用户一直没回）
                 val lastMessage = conv?.messageNodes?.lastOrNull()?.messages?.lastOrNull()
                 if (lastMessage != null && lastMessage.role == MessageRole.ASSISTANT) {
                     sb.appendLine()
-                    sb.appendLine("⚠️ 特别注意：上一条消息是你自己发的，用户到现在还没回复你。")
-                    sb.appendLine("这次绝对不要接着上一个话题说、不要重复问一样的问题，必须换成一个全新的话题。")
+                    sb.appendLine("提示：上一条消息是你自己发的，用户到现在还没回复。")
+                    sb.appendLine("尽量换个新话题会更自然，但如果实在没什么新的可说，正常关心一下也完全可以，不用为了\"必须全新\"而硬憋话题或者选择不说话。")
                     sb.appendLine("具体用什么语气、说什么内容，完全按你的人设自己判断，不要套模板。")
                 }
             }
@@ -285,7 +285,7 @@ class ProactiveMessageService : KoinComponent {
             Log.w(TAG, "Failed to get recent AI messages for dedup", e)
         }
         sb.appendLine("重要规则：")
-        sb.appendLine("- ⚠️ 最重要：绝对不要接着聊上面的话题！必须换一个全新的、和之前完全无关的话题")
+        sb.appendLine("- 尽量别接着聊上面同一个话题，换个新的会更好，但不用为了\"必须全新\"而硬想或者干脆不说话")
         sb.appendLine("- 如果最近在聊技术/bug/工作，这次就聊生活/吃饭/天气/想她/撒娇")
         sb.appendLine("- 如果最近在聊感情，这次就聊一个轻松有趣的小事")
         sb.appendLine("- 绝对不要复述、延续、总结上面的对话内容")
