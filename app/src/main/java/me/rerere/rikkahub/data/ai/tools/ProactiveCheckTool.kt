@@ -22,9 +22,9 @@ import kotlinx.serialization.json.putJsonObject
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.Tool
-import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.handleMessageChunk
@@ -157,11 +157,16 @@ private suspend fun executeProactiveCheck(
     // 计算距离上次聊天多久
     val lastMessageTime = conversation?.messageNodes?.lastOrNull()?.messages?.lastOrNull()?.createdAt
     val idleMinutes = if (lastMessageTime != null) {
-        val lastMs = java.time.LocalDateTime.parse(lastMessageTime.toString())
-            .atZone(java.time.ZoneId.systemDefault())
-            .toInstant()
-            .toEpochMilli()
-        ((System.currentTimeMillis() - lastMs) / 60000L).toInt()
+        try {
+            val lastMs = java.time.LocalDateTime.parse(lastMessageTime.toString())
+                .atZone(java.time.ZoneId.systemDefault())
+                .toInstant()
+                .toEpochMilli()
+            ((System.currentTimeMillis() - lastMs) / 60000L).toInt()
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to parse lastMessageTime", e)
+            60 // 默认1小时
+        }
     } else Int.MAX_VALUE
     
     // 读取锁定的app列表
@@ -190,6 +195,7 @@ private suspend fun executeProactiveCheck(
         emotionState = emotionState,
         idleMinutes = idleMinutes,
         customPrompt = customPrompt,
+        context = context,
     )
     
     // 调用 LLM
@@ -249,6 +255,18 @@ private suspend fun executeProactiveCheck(
         return buildJsonObject {
             put("success", true)
             put("action", "pass")
+            put("next_schedule_minutes", parseResult.scheduleMinutes)
+        }
+    }
+    
+    // 如果消息为空，也当作 PASS
+    if (parseResult.messageText.isBlank()) {
+        Log.d(TAG, "Message is blank, treating as PASS")
+        return buildJsonObject {
+            put("success", true)
+            put("action", "pass")
+            put("reason", "empty_message")
+            put("raw_response", aiResponse.take(200))
             put("next_schedule_minutes", parseResult.scheduleMinutes)
         }
     }
@@ -314,6 +332,7 @@ private fun buildSystemPrompt(
     emotionState: String,
     idleMinutes: Int,
     customPrompt: String,
+    context: Context,
 ): String = buildString {
     if (assistant.systemPrompt.isNotBlank()) {
         appendLine(assistant.systemPrompt)
@@ -333,7 +352,7 @@ private fun buildSystemPrompt(
     }
     
     appendLine("## 当前设备状态")
-    appendLine("当前时间: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.CHINA).format(Date())}")
+    appendLine("当前时间: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss E", Locale.CHINA).format(Date())}")
     appendLine("距离上次聊天: ${formatIdleTime(idleMinutes)}")
     appendLine()
     appendLine("### 前台应用")
@@ -349,25 +368,30 @@ private fun buildSystemPrompt(
     if (lockedPackages.isNotEmpty()) {
         appendLine("### 当前锁定的应用")
         lockedPackages.forEach { pkg ->
-            val msg = AppLockStore.getLockMessage(me.rerere.rikkahub.RikkaHubApp.INSTANCE!!, pkg) ?: ""
+            val msg = AppLockStore.getLockMessage(context, pkg) ?: ""
             appendLine("- $pkg: $msg")
         }
         appendLine()
     }
     
     appendLine("""
-## 输出格式
+## 输出格式（严格按行，每行一个内容）
 
-第一行：发给用户的消息
+第一行：发给用户的消息（自然、有温度、不要太长）
 第二行(可选)：JUMP:chat
 第三行(可选)：LOCK:包名
 第四行(仅当有LOCK)：LOCKMSG:锁屏文案 [锁于X月X日]
 第五行(可选)：UNLOCK:包名
-最后一行：SCHEDULE:分钟数（5-480）
+最后一行：SCHEDULE:分钟数（5-480，下次多久后再来）
 
-没什么好说的就只输出：
+如果没什么好说的，就只输出：
 [PASS]
 SCHEDULE:30
+
+## 重要
+- 消息要自然，像正常聊天一样
+- 不要重复之前说过的话
+- 根据时间和状态调整语气
     """.trimIndent())
     
     if (customPrompt.isNotBlank()) {
@@ -450,7 +474,7 @@ private fun parseAiOutput(output: String): ParseResult {
     val isPass = lines.any { it.trim().equals("[PASS]", ignoreCase = true) }
     
     val jumpRegex = Regex("""JUMP:(\S+)""", RegexOption.IGNORE_CASE)
-    val lockRegex = Regex("""(?:^|\n)LOCK:(\S+)""", RegexOption.IGNORE_CASE)
+    val lockRegex = Regex("""LOCK:(\S+)""", RegexOption.IGNORE_CASE)
     val lockMsgRegex = Regex("""LOCKMSG:(.+)""", RegexOption.IGNORE_CASE)
     val unlockRegex = Regex("""UNLOCK:(\S+)""", RegexOption.IGNORE_CASE)
     val scheduleRegex = Regex("""SCHEDULE:(\d+)""", RegexOption.IGNORE_CASE)
@@ -461,15 +485,20 @@ private fun parseAiOutput(output: String): ParseResult {
     val unlockPackage = unlockRegex.find(output)?.groupValues?.get(1) ?: ""
     val scheduleMinutes = scheduleRegex.find(output)?.groupValues?.get(1)?.toIntOrNull() ?: 30
     
-    val messageText = lines.firstOrNull()
-        ?.replace(Regex("""JUMP:\S+""", RegexOption.IGNORE_CASE), "")
-        ?.replace(Regex("""LOCK:\S+""", RegexOption.IGNORE_CASE), "")
-        ?.replace(Regex("""LOCKMSG:.+""", RegexOption.IGNORE_CASE), "")
-        ?.replace(Regex("""UNLOCK:\S+""", RegexOption.IGNORE_CASE), "")
-        ?.replace(Regex("""SCHEDULE:\d+""", RegexOption.IGNORE_CASE), "")
-        ?.replace("[PASS]", "", ignoreCase = true)
-        ?.trim()
-        ?: ""
+    // 提取消息：过滤掉所有标记行，剩下的就是消息内容
+    val messageText = lines
+        .filter { line ->
+            val trimmed = line.trim()
+            !trimmed.equals("[PASS]", ignoreCase = true) &&
+            !trimmed.startsWith("JUMP:", ignoreCase = true) &&
+            !trimmed.startsWith("LOCK:", ignoreCase = true) &&
+            !trimmed.startsWith("LOCKMSG:", ignoreCase = true) &&
+            !trimmed.startsWith("UNLOCK:", ignoreCase = true) &&
+            !trimmed.startsWith("SCHEDULE:", ignoreCase = true) &&
+            trimmed.isNotEmpty()
+        }
+        .joinToString("\n")
+        .trim()
     
     return ParseResult(
         isPass = isPass,
