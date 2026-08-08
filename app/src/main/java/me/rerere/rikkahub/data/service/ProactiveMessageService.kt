@@ -618,7 +618,16 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                 // 解析 [JUMP] 标记（AI总是可以跳转，不需要开关）
                 val rawText = aiMessage.parts.filterIsInstance<UIMessagePart.Text>()
                     .joinToString("\n") { it.text }.trim()
-                val replyText = rawText.replace("\\[JUMP]".toRegex(RegexOption.IGNORE_CASE), "").trim()
+
+                // 查岗模式：解析并执行 LOCK: / LOCKMSG: / UNLOCK: 结构化标记，返回剥离掉这些标记行之后的展示文本。
+                // 只有 guardModeEnabled 时才解析和执行，避免非查岗场景误触发锁机。
+                val textAfterGuardStrip = if (proactiveSetting.guardModeEnabled) {
+                    applyGuardModeDirectives(rawText, proactiveSetting)
+                } else {
+                    rawText
+                }
+
+                val replyText = textAfterGuardStrip.replace("\\[JUMP]".toRegex(RegexOption.IGNORE_CASE), "").trim()
                 // AI总是可以跳转，不需要allowForceJump开关
                 val shouldJump = hasJumpFlag
 
@@ -627,7 +636,11 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
                     val cleanedAiMessage = aiMessage.copy(
                         parts = aiMessage.parts.map { part ->
                             if (part is UIMessagePart.Text) {
-                                UIMessagePart.Text(part.text.replace("\\[JUMP]".toRegex(RegexOption.IGNORE_CASE), "").trim())
+                                var cleaned = part.text.replace("\\[JUMP]".toRegex(RegexOption.IGNORE_CASE), "")
+                                if (proactiveSetting.guardModeEnabled) {
+                                    cleaned = stripGuardModeDirectiveLines(cleaned)
+                                }
+                                UIMessagePart.Text(cleaned.trim())
                             } else {
                                 part
                             }
@@ -1219,6 +1232,59 @@ class ProactiveMessageTriggerService : android.app.Service(), KoinComponent {
         }
 
         return Triple(messages, hasToolCalls, hasJumpFlag)
+    }
+
+    /**
+     * 查岗模式：解析 AI 原始输出里的结构化标记（LOCK:/LOCKMSG:/UNLOCK:），
+     * 直接调用 AppLockStore/AppLockGuard 执行锁定/解锁，不经过 needsApproval 那套工具审批流程。
+     *
+     * 安全闸门：LOCK 只在目标包名出现在用户设置的 guardLockablePackages 白名单里时才会真正生效，
+     * 不在白名单里的 LOCK 指令会被忽略（AI 只能靠消息内容口头警告，不能真的锁）。
+     *
+     * 返回值：剥离掉这些指令行之后的文本（供后续继续走 [JUMP] 清理和展示逻辑）。
+     */
+    private fun applyGuardModeDirectives(rawText: String, setting: ProactiveMessageSetting): String {
+        try {
+            val lockMatch = Regex("""(?:^|\n)LOCK:(\S+)""").find(rawText)
+            val lockMsgMatch = Regex("""LOCKMSG:(.+)""").find(rawText)
+            val unlockMatch = Regex("""UNLOCK:(\S+)""").find(rawText)
+
+            val lockPkg = lockMatch?.groupValues?.get(1)?.trim()
+            if (!lockPkg.isNullOrBlank()) {
+                if (lockPkg in setting.guardLockablePackages) {
+                    val lockMsg = lockMsgMatch?.groupValues?.get(1)?.trim()
+                        ?.takeIf { it.isNotBlank() } ?: "你被我锁起来了，回来找我说说话吧。"
+                    AppLockStore.lockApp(applicationContext, lockPkg)
+                    AppLockStore.setLockMessage(applicationContext, lockPkg, lockMsg)
+                    AppLockStore.setRequirePin(applicationContext, lockPkg, false) // 查岗锁：只有 AI 能解，没有 PIN 逃生通道
+                    AppLockGuard.reArmLock(lockPkg)
+                    AppLockGuard.refresh()
+                    Log.i(TAG, "Guard mode: locked $lockPkg")
+                } else {
+                    Log.w(TAG, "Guard mode: LOCK:$lockPkg ignored, not in guardLockablePackages whitelist")
+                }
+            }
+
+            val unlockPkg = unlockMatch?.groupValues?.get(1)?.trim()
+            if (!unlockPkg.isNullOrBlank()) {
+                AppLockStore.unlockApp(applicationContext, unlockPkg)
+                AppLockGuard.refresh()
+                Log.i(TAG, "Guard mode: unlocked $unlockPkg")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Guard mode: failed to apply directives", e)
+        }
+        return stripGuardModeDirectiveLines(rawText)
+    }
+
+    /** 把 LOCK:/LOCKMSG:/UNLOCK: 这几行从展示给用户的文本里去掉，用户不应该看到这些内部标记。 */
+    private fun stripGuardModeDirectiveLines(text: String): String {
+        return text.lines()
+            .filterNot { line ->
+                val trimmed = line.trim()
+                trimmed.startsWith("LOCK:") || trimmed.startsWith("LOCKMSG:") || trimmed.startsWith("UNLOCK:")
+            }
+            .joinToString("\n")
     }
 
     /**
