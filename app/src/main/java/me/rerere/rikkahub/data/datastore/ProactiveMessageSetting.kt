@@ -26,4 +26,11 @@ data class ProactiveMessageSetting(
     val aggressiveDebounceSeconds: Int = 30,
     // 悬浮球：主动消息到达时以 Telegram 风格悬浮球提醒，点击直接进入聊天页
     val floatingBubbleEnabled: Boolean = false,
+    // 查岗模式：在激进模式基础上，允许 AI 结合手机使用时长自主锁定/解锁 app（不需要用户批准）。
+    // 必须先开启 aggressiveModeEnabled 才会生效。默认关闭，因为这是真实的锁机能力。
+    val guardModeEnabled: Boolean = false,
+    // 查岗模式下 AI 被允许锁定的 app 包名白名单（逗号分隔存成 List）。
+    // 出于安全考虑，AI 只能锁这个列表里的 app，不在列表里的 app 只会被口头警告，不会真的锁。
+    // 默认空列表 = 查岗模式即使打开也不会真的锁任何 app，用户必须显式添加想被监督的娱乐 app。
+    val guardLockablePackages: List<String> = emptyList(),
 )
