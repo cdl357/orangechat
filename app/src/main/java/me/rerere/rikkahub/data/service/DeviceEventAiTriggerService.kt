@@ -34,9 +34,13 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import me.rerere.ai.core.MessageRole
+import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.DEVICE_EVENT_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.getCurrentAssistant
+import me.rerere.rikkahub.data.repository.ConversationRepository
 import org.koin.core.context.GlobalContext
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -415,7 +419,7 @@ class DeviceEventAiTriggerService : Service() {
                 Log.w(TAG, "Failed to get locked apps for guard mode", e)
             }
 
-            val lockable = proactiveSetting.guardLockablePackages
+    val lockable = proactiveSetting.guardLockablePackages
             sb.appendLine()
             sb.appendLine("[你被允许真正锁定的app白名单]")
             if (lockable.isEmpty()) {
@@ -423,6 +427,40 @@ class DeviceEventAiTriggerService : Service() {
             } else {
                 lockable.forEach { sb.appendLine("  - $it") }
             }
+        }
+
+        // 最近说过什么 + 上一条是不是自己发的没人回，避免激进模式反复重复同一个话题
+        try {
+            val settingsStore = GlobalContext.get().get<SettingsStore>()
+            val conversationRepository = GlobalContext.get().get<ConversationRepository>()
+            val settings = settingsStore.settingsFlowRaw.first()
+            val assistantId = settings.assistants.find { it.id.toString() == settings.proactiveMessageSetting.assistantId }?.id
+                ?: settings.getCurrentAssistant().id
+            val recentConvs = conversationRepository.getRecentConversations(assistantId, limit = 1)
+            if (recentConvs.isNotEmpty()) {
+                val conv = conversationRepository.getConversationById(recentConvs.first().id)
+                val recentAiMsgs = conv?.messageNodes?.asReversed()?.take(10)
+                    ?.flatMap { it.messages }
+                    ?.filter { it.role == MessageRole.ASSISTANT }
+                    ?.take(3)
+                    ?.flatMap { it.parts.filterIsInstance<UIMessagePart.Text>() }
+                    ?.map { it.text.trim() }
+                    ?.filter { it.isNotBlank() && !it.contains("[PASS]") }
+                if (!recentAiMsgs.isNullOrEmpty()) {
+                    sb.appendLine()
+                    sb.appendLine("你最近发过的消息（绝对不要重复这些内容或话题，必须换新话题）:")
+                    recentAiMsgs.forEachIndexed { i, msg -> sb.appendLine("  ${i + 1}. ${msg.take(60)}") }
+                }
+                val lastMessage = conv?.messageNodes?.lastOrNull()?.messages?.lastOrNull()
+                if (lastMessage != null && lastMessage.role == MessageRole.ASSISTANT) {
+                    sb.appendLine()
+                    sb.appendLine("⚠️ 特别注意：上一条消息是你自己发的，用户到现在还没回复你。")
+                    sb.appendLine("这次绝对不要接着上一个话题说、不要重复问一样的问题，必须换成一个全新的话题。")
+                    sb.appendLine("具体用什么语气、说什么内容，完全按你的人设自己判断，不要套模板。")
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to get recent AI messages for dedup", e)
         }
 
         sb.appendLine()
