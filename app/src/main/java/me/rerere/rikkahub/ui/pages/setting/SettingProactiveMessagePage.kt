@@ -273,6 +273,64 @@ fun SettingProactiveMessagePage(vm: SettingVM = koinInject()) {
                             )
                         }
                     )
+                    // 查岗模式开关（仅当激进模式开启时显示，依赖激进模式的设备事件驱动）
+                    if (settings.proactiveMessageSetting.aggressiveModeEnabled) {
+                        item(
+                            headlineContent = { Text("查岗模式") },
+                            supportingContent = {
+                                Text(
+                                    "在激进模式基础上，让 AI 结合今日各 app 使用时长自主判断，" +
+                                        "必要时锁定/解锁下面白名单里的 app —— 不需要你手动确认。\n\n" +
+                                        "⚠️ 这是真实的锁机能力：AI 可以在你不点头的情况下把手机上的某个 app 锁住，" +
+                                        "只有 AI 自己愿意才能解开。只对下面白名单里的 app 生效，其余 app AI 只能口头提醒。"
+                                )
+                            },
+                            trailingContent = {
+                                Switch(
+                                    checked = settings.proactiveMessageSetting.guardModeEnabled,
+                                    onCheckedChange = { enabled ->
+                                        vm.updateSettings(
+                                            settings.copy(
+                                                proactiveMessageSetting = settings.proactiveMessageSetting.copy(
+                                                    guardModeEnabled = enabled
+                                                )
+                                            )
+                                        )
+                                    }
+                                )
+                            }
+                        )
+                        if (settings.proactiveMessageSetting.guardModeEnabled) {
+                            var lockableText by remember(settings.proactiveMessageSetting.guardLockablePackages) {
+                                mutableStateOf(settings.proactiveMessageSetting.guardLockablePackages.joinToString(", "))
+                            }
+                            item(
+                                headlineContent = { Text("可被锁定的 app 白名单") },
+                                supportingContent = {
+                                    OutlinedTextField(
+                                        value = lockableText,
+                                        onValueChange = { value ->
+                                            lockableText = value
+                                            val pkgs = value.split(",", "，", "\n")
+                                                .map { it.trim() }
+                                                .filter { it.isNotBlank() }
+                                            vm.updateSettings(
+                                                settings.copy(
+                                                    proactiveMessageSetting = settings.proactiveMessageSetting.copy(
+                                                        guardLockablePackages = pkgs
+                                                    )
+                                                )
+                                            )
+                                        },
+                                        placeholder = { Text("如：com.xingin.xhs, tv.danmaku.bili") },
+                                        singleLine = false,
+                                        modifier = Modifier.padding(top = 8.dp),
+                                    )
+                                    Text("填包名，逗号或换行分隔。只有这里的 app 才可能被真的锁，其他 app AI 只能提醒不能锁。留空 = 即使查岗模式开着也不会真锁任何 app。")
+                                },
+                            )
+                        }
+                    }
                     // 最小间隔设置（仅当激进模式开启时显示）
                     if (settings.proactiveMessageSetting.aggressiveModeEnabled) {
                         item(
