@@ -228,19 +228,21 @@ private suspend fun executeProactiveCheck(
     
     val providerImpl = providerManager.getProviderByType(providerSetting)
     
-    var aiResponse = ""
+    var streamMessages = mergedMessages.toMutableList()
     providerImpl.streamText(
         providerSetting = providerSetting,
         messages = mergedMessages,
         params = textParams,
     ).collect { chunk: MessageChunk ->
-        val updated = listOf(UIMessage(role = MessageRole.ASSISTANT, parts = emptyList()))
-            .handleMessageChunk(chunk)
-        aiResponse = updated.lastOrNull()?.parts
-            ?.filterIsInstance<UIMessagePart.Text>()
-            ?.joinToString("") { it.text }
-            ?: ""
+        streamMessages = streamMessages.handleMessageChunk(chunk).toMutableList()
     }
+    
+    val aiResponse = streamMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
+        ?.parts
+        ?.filterIsInstance<UIMessagePart.Text>()
+        ?.joinToString("") { it.text }
+        ?: ""
+    
     
     Log.d(TAG, "AI response: $aiResponse")
     
