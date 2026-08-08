@@ -346,7 +346,7 @@ class DeviceEventAiTriggerService : Service() {
             Log.d(TAG, "Triggering AI thinking with ${events.size} events")
 
             // 构建事件上下文
-            val eventContext = buildEventContext(events)
+            val eventContext = buildEventContext(events, proactiveSetting)
 
             // 复用 ProactiveMessageTriggerService 的 AI 思考逻辑
             val triggerIntent = Intent(this@DeviceEventAiTriggerService, ProactiveMessageTriggerService::class.java).apply {
@@ -360,7 +360,10 @@ class DeviceEventAiTriggerService : Service() {
         }
     }
 
-    private fun buildEventContext(events: List<DeviceEvent>): String {
+    private suspend fun buildEventContext(
+        events: List<DeviceEvent>,
+        proactiveSetting: me.rerere.rikkahub.data.datastore.ProactiveMessageSetting
+    ): String {
         val sb = StringBuilder()
         sb.appendLine("[设备事件触发]")
         sb.appendLine("以下是过去30秒内用户的手机操作动向：")
@@ -376,6 +379,52 @@ class DeviceEventAiTriggerService : Service() {
             }
             sb.appendLine("  - [$time] $desc")
         }
+
+        // 查岗模式：附加今日使用时长 + 当前锁定app列表 + 结构化指令
+        val guardModeActive = proactiveSetting.guardModeEnabled
+        if (guardModeActive) {
+            try {
+                val appUsageService = AppUsageService(applicationContext)
+                val usageResult = appUsageService.getTodayUsageStats()
+                if (usageResult.isSuccess) {
+                    val stats = usageResult.getOrThrow().take(10)
+                    if (stats.isNotEmpty()) {
+                        sb.appendLine()
+                        sb.appendLine("[数据源：今日各app使用时长]")
+                        stats.forEach { s ->
+                            val minutes = s.totalTimeInForeground / 60000
+                            sb.appendLine("  - ${s.appName} (${s.packageName}): ${minutes}分钟")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to get app usage for guard mode", e)
+            }
+
+            try {
+                val locked = AppLockStore.getLockedPackages(applicationContext)
+                if (locked.isNotEmpty()) {
+                    sb.appendLine()
+                    sb.appendLine("[数据源：当前已锁定的app]")
+                    locked.forEach { pkg ->
+                        val msg = AppLockStore.getLockMessage(applicationContext, pkg) ?: ""
+                        sb.appendLine("  - $pkg （锁屏文案：$msg）")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to get locked apps for guard mode", e)
+            }
+
+            val lockable = proactiveSetting.guardLockablePackages
+            sb.appendLine()
+            sb.appendLine("[你被允许真正锁定的app白名单]")
+            if (lockable.isEmpty()) {
+                sb.appendLine("  （空 —— 用户还没有把任何app加入白名单，你现在不能真的锁任何app，只能口头提醒/警告）")
+            } else {
+                lockable.forEach { sb.appendLine("  - $it") }
+            }
+        }
+
         sb.appendLine()
         sb.appendLine("请根据以上用户动向，以自然、关心、有趣的方式决定是否主动给用户发一条消息。")
         sb.appendLine("如果你觉得现在没什么好说的，或者没什么有趣的话题，请只回复 [PASS] 即可。")
@@ -387,6 +436,17 @@ class DeviceEventAiTriggerService : Service() {
         sb.appendLine("- 不要使用任何XML标签、思考标记或特殊格式，只输出纯文本的消息内容")
         sb.appendLine("- 不要调用任何工具或函数，只输出纯文本回复")
         sb.appendLine("- 不要输出思考过程、推理过程或内部独白，只输出你想对用户说的话")
+
+        if (guardModeActive) {
+            sb.appendLine()
+            sb.appendLine("【查岗模式 - 额外输出格式】")
+            sb.appendLine("在你写给用户的消息之后，如果需要，可以再另起几行加上下面这些结构化标记（这些标记不会展示给用户）：")
+            sb.appendLine("LOCK:包名   —— 只有该包名在上面\"你被允许真正锁定的app白名单\"里才有效，其余包名会被忽略")
+            sb.appendLine("LOCKMSG:一句话 —— 仅当输出了LOCK时才需要，锁屏上专门给用户看的话，末尾加[锁于X月X日]")
+            sb.appendLine("UNLOCK:包名 —— 解锁一个之前锁的、且不是今天刚锁的app（给用户一条生路，不要把人困死）")
+            sb.appendLine("诚实铁律：如果消息里说了\"锁起来了\"，必须真的输出对应的LOCK；包名不在白名单里就只能口头警告，绝对不能说谎说锁了。")
+            sb.appendLine("只在娱乐app使用时长明显超标（如累计超过60-90分钟）或深夜还在刷时才考虑LOCK，轻度使用只需要撒娇提醒，不要一言不合就锁。")
+        }
         return sb.toString()
     }
 
