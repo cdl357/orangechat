@@ -98,12 +98,11 @@ private val YuriB = Color(0xFFEFC7A2)
 private val Serif = FontFamily.Serif
 
 /**
- * 图片附件的存放方式说明（重要）：
- * Supabase 的 moments / moment_comments 两张表没有 images 字段，而我们手上只有 service_role
- * 的 REST 权限，没有数据库 DDL 权限（拿不到 DB 密码，PostgREST 也不能 ALTER TABLE）。
- * 所以图片 URL 用一个隐藏标记塞在 content 末尾：正文 + "\n<!--imgs:url1|url2-->"。
- * App 端解析出来单独渲染；服务器端 heartbeat.py 的 worker 会在喂给 LLM 前把标记剥掉。
- * 以后若能执行 SQL 加字段，可以平滑迁移，解析逻辑保持兼容即可。
+ * 图片附件：现在存在 moments / moment_comments 的 images 列（text[]，2026-08-09 加的）。
+ *
+ * 早先没有这一列（只有 PostgREST 权限，不能 ALTER TABLE），图片 URL 是塞在 content 末尾的
+ * 隐藏标记里：正文 + "\n<!--imgs:url1|url2-->"。下面的 stripImages / parseImages 保留下来
+ * 读旧数据，写入一律走 images 列，不再产生新的隐藏标记。
  */
 private val IMG_REGEX = Regex("""<!--imgs:(.*?)-->""", RegexOption.DOT_MATCHES_ALL)
 
@@ -113,9 +112,6 @@ private fun parseImages(raw: String): List<String> =
     IMG_REGEX.find(raw)?.groupValues?.get(1)
         ?.split("|")?.map { it.trim() }?.filter { it.isNotBlank() }
         ?: emptyList()
-
-private fun withImages(content: String, images: List<String>): String =
-    if (images.isEmpty()) content else content + "\n<!--imgs:" + images.joinToString("|") + "-->"
 
 data class Moment(
     val id: String,
@@ -144,6 +140,13 @@ private fun isSean(author: String): Boolean =
     author != "yuri" && author != "Yuri" && author != "小鑫" && author != "李雨鑫"
 
 // ── 网络 ────────────────────────────────────────────────────
+
+/** PostgREST 把 text[] 返回成 JSON 数组；列为 null 时给空列表。 */
+private fun readImages(o: JSONObject): List<String> {
+    if (o.isNull("images")) return emptyList()
+    val arr = o.optJSONArray("images") ?: return emptyList()
+    return (0 until arr.length()).map { arr.optString(it, "") }.filter { it.isNotBlank() }
+}
 
 private fun conn(url: String, method: String = "GET"): HttpURLConnection =
     (URL(url).openConnection() as HttpURLConnection).apply {
@@ -174,7 +177,8 @@ fun fetchMoments(): List<Moment> {
             id = o.getString("id"),
             author = o.optString("author", "sean"),
             content = stripImages(raw),
-            images = parseImages(raw),
+            // images 列是新加的；老数据的图片还在 content 的隐藏标记里，回退解析一次
+            images = readImages(o).ifEmpty { parseImages(raw) },
             yuriLiked = o.optBoolean("yuri_liked", false),
             liked = o.optBoolean("liked", false),
             replyContent = if (o.isNull("reply_content")) null else o.optString("reply_content"),
@@ -199,7 +203,7 @@ fun fetchComments(momentIds: List<String>): List<MomentComment> {
             momentId = o.optString("moment_id", ""),
             author = o.optString("author", "yuri"),
             content = stripImages(raw),
-            images = parseImages(raw),
+            images = readImages(o).ifEmpty { parseImages(raw) },
             replyStatus = o.optString("reply_status", "done"),
             createdAt = o.optString("created_at", ""),
         )
@@ -211,7 +215,8 @@ fun postMoment(content: String, images: List<String>, author: String = "yuri") {
     // 早先这里写死 "done"，等于告诉后台"这条不用回"，所以小鑫发的动态永远等不到回应。
     val payload = JSONObject().apply {
         put("author", author)
-        put("content", withImages(content, images))
+        put("content", content)
+        put("images", JSONArray(images))
         put("reply_status", if (author == "yuri") "pending" else "done")
     }.toString()
     writeJson(conn("$SUPA_URL/rest/v1/moments", "POST"), payload)
@@ -221,7 +226,8 @@ fun postComment(momentId: String, content: String, images: List<String>, author:
     val payload = JSONObject().apply {
         put("moment_id", momentId)
         put("author", author)
-        put("content", withImages(content, images))
+        put("content", content)
+        put("images", JSONArray(images))
         put("reply_status", if (author == "yuri") "pending" else "done")
     }.toString()
     writeJson(conn("$SUPA_URL/rest/v1/moment_comments", "POST"), payload)
