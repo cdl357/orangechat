@@ -175,6 +175,7 @@ import me.rerere.rikkahub.ui.pages.bulletin.BulletinPage
 import me.rerere.rikkahub.ui.pages.album.AlbumPage
 import me.rerere.rikkahub.ui.pages.tide.TidePage
 import me.rerere.rikkahub.ui.pages.moments.MomentsPage
+import me.rerere.rikkahub.ui.pages.dream.DreamPage
 import me.rerere.rikkahub.ui.pages.love.LovePage
 import me.rerere.rikkahub.ui.pages.voice.IncomingCallPage
 import me.rerere.rikkahub.ui.pages.voice.VoiceCallPage
@@ -882,6 +883,10 @@ class RouteActivity : ComponentActivity() {
                             entry<Screen.Moments> {
                                 MomentsPage()
                             }
+
+                            entry<Screen.Dream> {
+                                DreamPage()
+                            }
                             entry<Screen.Love> {
                                 LovePage()
                             }
@@ -1187,6 +1192,10 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object Moments : Screen
+
+    @Serializable
+    data object Dream : Screen
+
     data object Love : Screen
 }
 
