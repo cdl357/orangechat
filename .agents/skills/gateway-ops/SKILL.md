@@ -62,25 +62,30 @@ journalctl -u mcp-gateway --since '30 seconds ago' --no-pager | grep -E '心跳�
 grep -n '^import ' heartbeat.py | head -20
 ```
 
-### 2. MCP 工具必须写在 `if __name__ == "__main__":` 之前
+### 2. 入口块必须在 server.py 最末尾（2026-08-09 已修）
 
-`server.py` 大约 1260 行是 `__main__` 块，**它后面还有十几个 `@mcp.tool()` 定义**
-（recall_dreams / create_trail / send_email 等）。那些是死代码——uvicorn 一跑起来就阻塞在
-`uvicorn.run()`，后面的定义永远不会执行，工具永远不注册。
+`uvicorn.run()` 会一直阻塞，**写在它后面的任何 `@mcp.tool()` 定义都不会执行**。
 
-所以新工具**一定插在 `__main__` 之前**：
+这个坑真发生过：入口块原来在 1382 行，后面还跟着 14 个工具定义（recall_dreams /
+create_trail / add_to_trail / list_trails / get_trail / correct_memory / doubt_memory /
+get_memory_history / save_raw_memory / list_doubted_memories / cache_forum_threads /
+get_pending_forum_reply / clear_pending_forum_reply / send_email / read_emails）。
+**这些工具从来没注册过**，注册数一直是 28。把入口块整块挪到文件末尾后变成 42。
 
-```python
-anchor = 'if __name__ == "__main__":'
-assert s.count(anchor) == 1
-s = s.replace(anchor, new_tools_code + '\n\n\n' + anchor, 1)
-```
+现在入口在末尾了，新工具加在哪都行。但**改动这个文件时别把入口块又挪到中间去**。
 
-改完确认工具真注册上了：
+改完必须确认工具数：
 
 ```bash
-journalctl -u mcp-gateway --since '1 minute ago' --no-pager | grep ListToolsRequest
+# 走 MCP 协议真实列一遍（脚本在 /tmp/lt2.py）
+/opt/venv/bin/python3 /tmp/lt2.py
 ```
+
+它会 SSE 握手拿 session_id → initialize → notifications/initialized → tools/list，
+打印工具总数和名字。**只看 journalctl 里的 ListToolsRequest 不够**，那只说明有人请求过，
+不告诉你返回了几个。
+
+另外：工具改了之后**橘瓣那边要重连一次网关**才能看到新列表（MCP 页面把网关开关关掉再打开）。
 
 ### 3. `.env` 里的 key 是过期的
 
