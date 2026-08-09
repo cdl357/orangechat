@@ -11,7 +11,9 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -80,6 +82,20 @@ data class SupabaseHealthData(
     val sleepDeepMinutes: Int? = null,
     val sleepLightMinutes: Int? = null,
     val sleepRemMinutes: Int? = null,
+)
+
+/**
+ * 云端日记行（Supabase `diary_entries` 表）。
+ * 网关的心跳任务每天凌晨会往这张表写一篇日记，App 侧需要主动拉下来才能在日记本里看到。
+ */
+@Serializable
+data class SupabaseDiaryRow(
+    @SerialName("id") val id: String = "",
+    @SerialName("user_id") val userId: String = "",
+    @SerialName("title") val title: String = "",
+    @SerialName("content") val content: String = "",
+    @SerialName("mood") val mood: String = "",
+    @SerialName("created_at") val createdAt: String = "",
 )
 
 class SupabaseService(
@@ -272,6 +288,44 @@ class SupabaseService(
             Unit
         }
     }
+    /**
+     * 拉取云端日记（GET diary_entries）。用于日记本页面把网关凌晨写的日记同步进本地 Room。
+     */
+    suspend fun fetchDiaryEntries(
+        limit: Int = 100,
+        tableName: String = "diary_entries",
+    ): Result<List<SupabaseDiaryRow>> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (supabaseUrl.isBlank() || supabaseApiKey.isBlank()) {
+                throw IllegalArgumentException("Supabase URL and API Key must not be blank")
+            }
+
+            val baseUrl = supabaseUrl.trimEnd('/')
+            val query = "select=id,user_id,title,content,mood,created_at&order=created_at.desc&limit=$limit"
+            val url = URL("$baseUrl/rest/v1/$tableName?$query")
+
+            val connection = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("apikey", supabaseApiKey)
+                setRequestProperty("Authorization", "Bearer $supabaseApiKey")
+                setRequestProperty("Accept", "application/json")
+                connectTimeout = 15000
+                readTimeout = 15000
+            }
+
+            val responseCode = connection.responseCode
+            if (responseCode !in 200..299) {
+                val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                throw Exception("Supabase API error ($responseCode): $errorBody")
+            }
+
+            val body = connection.inputStream.bufferedReader().use { it.readText() }
+            val rows = json.decodeFromString(ListSerializer(SupabaseDiaryRow.serializer()), body)
+            Log.d(TAG, "fetchDiaryEntries: got ${rows.size} rows from $tableName")
+            rows
+        }
+    }
+
 }
 
 suspend fun SupabaseService.insertDeviceEvent(eventType: String): Result<Unit> {

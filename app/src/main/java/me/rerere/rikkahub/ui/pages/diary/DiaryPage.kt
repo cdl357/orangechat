@@ -21,13 +21,18 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,16 +79,42 @@ private val TabBg = Color(0xFFEBE5DB)
 fun DiaryPage(vm: DiaryVM = koinViewModel()) {
     val seanEntries by vm.seanEntries.collectAsStateWithLifecycle()
     val yuriEntries by vm.yuriEntries.collectAsStateWithLifecycle()
+    val syncing by vm.syncing.collectAsStateWithLifecycle()
+    val syncMessage by vm.syncMessage.collectAsStateWithLifecycle()
     // tab: 0 = Sean 的日记, 1 = Yuri 的日记
     var tab by remember { mutableStateOf(0) }
     val entries = if (tab == 0) seanEntries else yuriEntries
 
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(syncMessage) {
+        val msg = syncMessage
+        if (msg != null) {
+            snackbarHostState.showSnackbar(msg)
+            vm.clearSyncMessage()
+        }
+    }
+
     Scaffold(
         containerColor = NotebookBgOuter,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("日记本", color = InkMain) },
                 navigationIcon = { BackButton() },
+                actions = {
+                    // 手动从云端拉一次（网关每天凌晨写在 Supabase 上，本地要拉才能看到）
+                    if (syncing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.padding(end = 16.dp).size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = InkMuted,
+                        )
+                    } else {
+                        TextButton(onClick = { vm.syncFromCloud() }) {
+                            Text("同步", fontSize = 13.sp, color = InkSub)
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = NotebookBgOuter),
             )
         },
@@ -134,9 +165,12 @@ fun DiaryPage(vm: DiaryVM = koinViewModel()) {
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                if (tab == 0) "Sean 还没写日记" else "Yuri 还没写日记",
+                                if (tab == 0) "Sean 还没写日记\n（点右上角「同步」拉一次云端日记）"
+                                else "Yuri 还没写日记",
                                 fontSize = 14.sp,
                                 color = InkMuted,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                lineHeight = 20.sp,
                             )
                         }
                     }

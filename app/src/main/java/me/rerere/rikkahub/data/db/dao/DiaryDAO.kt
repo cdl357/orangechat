@@ -32,4 +32,8 @@ interface DiaryDAO {
 
     @Query("SELECT * FROM diary_entry WHERE id = :id")
     suspend fun getById(id: Int): DiaryEntity?
+
+    /** 按标题查（云端日记同步去重用：标题形如 "📅 2026-08-08 日记"，每天唯一） */
+    @Query("SELECT * FROM diary_entry WHERE title = :title LIMIT 1")
+    suspend fun getByTitle(title: String): DiaryEntity?
 }
