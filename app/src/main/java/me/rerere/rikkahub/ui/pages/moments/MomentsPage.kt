@@ -3,6 +3,8 @@
  */
 package me.rerere.rikkahub.ui.pages.moments
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,24 +15,22 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,10 +40,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -54,15 +56,30 @@ import me.rerere.hugeicons.stroke.PlusSign
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.io.OutputStreamWriter
-import java.net.HttpURLConnection
+import java.util.TimeZone
 
 private const val SUPA_URL = "https://byqqwypdfiwvalozihgs.supabase.co"
 private const val SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ5cXF3eXBkZml3dmFsb3ppaGdzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzY1NDA4MCwiZXhwIjoyMDk5MjMwMDgwfQ.LIbE9DFsLSRhOig5bUUfUP4r7t1ykdNy8L0gZM_xtGw"
+
+// ── 朋友圈配色：暖白纸底，Sean 冷色 / Yuri 暖色 ──────────────
+private val PageBg = Color(0xFFFAF7F2)
+private val CardBg = Color.White
+private val InkMain = Color(0xFF33322E)
+private val InkSub = Color(0xFF5E5C56)
+private val InkMuted = Color(0xFF9A968C)
+private val InkFaint = Color(0xFFB8B3A8)
+private val LikeRed = Color(0xFFD9736B)
+private val CommentBg = Color(0xFFF6F3ED)
+private val SeanA = Color(0xFF6E8494)
+private val SeanB = Color(0xFF8FA3B0)
+private val YuriA = Color(0xFFE3A276)
+private val YuriB = Color(0xFFEFC29B)
 
 data class Moment(
     val id: String,
@@ -74,18 +91,35 @@ data class Moment(
     val createdAt: String,
 )
 
+data class MomentComment(
+    val id: String,
+    val momentId: String,
+    val author: String,
+    val content: String,
+    val createdAt: String,
+)
+
+/** author 字段历史上混用过 "sean"/"沈聿淮"，统一判断成"是不是我发的"。 */
+private fun isSean(author: String): Boolean =
+    author != "yuri" && author != "小鑫" && author != "李雨鑫" && author != "Yuri"
+
+private fun conn(url: String, method: String = "GET"): HttpURLConnection =
+    (URL(url).openConnection() as HttpURLConnection).apply {
+        requestMethod = method
+        setRequestProperty("apikey", SUPA_KEY)
+        setRequestProperty("Authorization", "Bearer $SUPA_KEY")
+        setRequestProperty("Accept", "application/json")
+        connectTimeout = 15000
+        readTimeout = 15000
+    }
+
 fun fetchMoments(): List<Moment> {
-    val url = URL("$SUPA_URL/rest/v1/moments?order=created_at.desc&limit=30")
-    val conn = url.openConnection() as HttpURLConnection
-    conn.setRequestProperty("apikey", SUPA_KEY)
-    conn.setRequestProperty("Authorization", "Bearer $SUPA_KEY")
-    conn.setRequestProperty("Accept", "application/json")
-    val body = conn.inputStream.bufferedReader().readText()
+    val body = conn("$SUPA_URL/rest/v1/moments?order=created_at.desc&limit=50")
+        .inputStream.bufferedReader().use { it.readText() }
     val arr = JSONArray(body)
-    val list = mutableListOf<Moment>()
-    for (i in 0 until arr.length()) {
+    return (0 until arr.length()).map { i ->
         val o = arr.getJSONObject(i)
-        list.add(Moment(
+        Moment(
             id = o.getString("id"),
             author = o.optString("author", "sean"),
             content = o.optString("content", ""),
@@ -93,98 +127,152 @@ fun fetchMoments(): List<Moment> {
             liked = o.optBoolean("liked", false),
             replyContent = if (o.isNull("reply_content")) null else o.optString("reply_content"),
             createdAt = o.optString("created_at", ""),
-        ))
+        )
     }
-    return list
+}
+
+/** 一次拉齐当前这批动态的所有评论，避免每条动态一个请求。 */
+fun fetchComments(momentIds: List<String>): List<MomentComment> {
+    if (momentIds.isEmpty()) return emptyList()
+    val inList = momentIds.joinToString(",")
+    val body = conn("$SUPA_URL/rest/v1/moment_comments?moment_id=in.($inList)&order=created_at.asc")
+        .inputStream.bufferedReader().use { it.readText() }
+    val arr = JSONArray(body)
+    return (0 until arr.length()).map { i ->
+        val o = arr.getJSONObject(i)
+        MomentComment(
+            id = o.getString("id"),
+            momentId = o.optString("moment_id", ""),
+            author = o.optString("author", "yuri"),
+            content = o.optString("content", ""),
+            createdAt = o.optString("created_at", ""),
+        )
+    }
+}
+
+private fun writeJson(c: HttpURLConnection, payload: String) {
+    c.doOutput = true
+    c.setRequestProperty("Content-Type", "application/json")
+    c.setRequestProperty("Prefer", "return=minimal")
+    OutputStreamWriter(c.outputStream, Charsets.UTF_8).use { it.write(payload) }
+    c.responseCode // 触发实际发送
 }
 
 fun postMoment(content: String, author: String) {
-    val url = URL("$SUPA_URL/rest/v1/moments")
-    val conn = url.openConnection() as HttpURLConnection
-    conn.requestMethod = "POST"
-    conn.doOutput = true
-    conn.setRequestProperty("apikey", SUPA_KEY)
-    conn.setRequestProperty("Authorization", "Bearer $SUPA_KEY")
-    conn.setRequestProperty("Content-Type", "application/json")
-    conn.setRequestProperty("Prefer", "return=minimal")
+    // reply_status=pending：交给服务器心跳里的惰性回复 worker 生成 Sean 的回复。
+    // 之前这里写死 "done"，等于告诉后台"这条不用回"，所以小鑫发的动态永远等不到回应。
     val payload = JSONObject().apply {
         put("author", author)
         put("content", content)
-        put("reply_status", "done")
+        put("reply_status", if (author == "yuri") "pending" else "done")
     }.toString()
-    OutputStreamWriter(conn.outputStream).use { it.write(payload) }
-    conn.responseCode // trigger
+    writeJson(conn("$SUPA_URL/rest/v1/moments", "POST"), payload)
 }
 
 fun toggleYuriLike(momentId: String, current: Boolean) {
-    val url = URL("$SUPA_URL/rest/v1/moments?id=eq.$momentId")
-    val conn = url.openConnection() as HttpURLConnection
-    conn.requestMethod = "PATCH"
-    conn.doOutput = true
-    conn.setRequestProperty("apikey", SUPA_KEY)
-    conn.setRequestProperty("Authorization", "Bearer $SUPA_KEY")
-    conn.setRequestProperty("Content-Type", "application/json")
-    conn.setRequestProperty("Prefer", "return=minimal")
     val payload = JSONObject().apply { put("yuri_liked", !current) }.toString()
-    OutputStreamWriter(conn.outputStream).use { it.write(payload) }
-    conn.responseCode
+    writeJson(conn("$SUPA_URL/rest/v1/moments?id=eq.$momentId", "PATCH"), payload)
+}
+
+fun postComment(momentId: String, content: String, author: String = "yuri") {
+    val payload = JSONObject().apply {
+        put("moment_id", momentId)
+        put("author", author)
+        put("content", content)
+        put("reply_status", if (author == "yuri") "pending" else "done")
+    }.toString()
+    writeJson(conn("$SUPA_URL/rest/v1/moment_comments", "POST"), payload)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MomentsPage() {
     var moments by remember { mutableStateOf<List<Moment>>(emptyList()) }
+    var comments by remember { mutableStateOf<Map<String, List<MomentComment>>>(emptyMap()) }
+    var loading by remember { mutableStateOf(true) }
     var showPostDialog by remember { mutableStateOf(false) }
+    // 正在写评论的那条动态 id（null = 没在写）
+    var commentingOn by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     fun reload() {
         scope.launch {
             withContext(Dispatchers.IO) {
-                try { moments = fetchMoments() } catch (e: Exception) {}
+                try {
+                    val ms = fetchMoments()
+                    val cs = fetchComments(ms.map { it.id }).groupBy { it.momentId }
+                    moments = ms
+                    comments = cs
+                } catch (e: Exception) {
+                    // 网络失败保留上一次数据，不清空
+                }
             }
+            loading = false
         }
     }
 
     LaunchedEffect(Unit) { reload() }
 
     Scaffold(
+        containerColor = PageBg,
         topBar = {
             TopAppBar(
-                title = { Text("朋友圈") },
+                title = { Text("朋友圈", color = InkMain) },
                 navigationIcon = { BackButton() },
+                actions = {
+                    TextButton(onClick = { reload() }) {
+                        Text("刷新", fontSize = 13.sp, color = InkSub)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = PageBg),
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showPostDialog = true }) {
-                Icon(HugeIcons.PlusSign, contentDescription = "发动态")
+            FloatingActionButton(
+                onClick = { showPostDialog = true },
+                containerColor = YuriA,
+                contentColor = Color.White,
+            ) {
+                Icon(HugeIcons.PlusSign, contentDescription = "发动态", modifier = Modifier.size(22.dp))
             }
         }
     ) { padding ->
-        if (moments.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text("还没有动态，点 + 发一条", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                verticalArrangement = Arrangement.spacedBy(0.dp),
-            ) {
-                item { Spacer(Modifier.height(8.dp)) }
-                items(moments, key = { it.id }) { moment ->
-                    MomentCard(
-                        moment = moment,
-                        onLike = {
-                            scope.launch {
-                                withContext(Dispatchers.IO) {
-                                    try { toggleYuriLike(moment.id, moment.yuriLiked) } catch (e: Exception) {}
-                                }
-                                reload()
-                            }
-                        }
-                    )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            when {
+                loading && moments.isEmpty() -> Box(
+                    Modifier.fillMaxSize(), contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(strokeWidth = 2.dp, color = InkMuted, modifier = Modifier.size(24.dp))
                 }
-                item { Spacer(Modifier.height(80.dp)) }
+
+                moments.isEmpty() -> Box(
+                    Modifier.fillMaxSize(), contentAlignment = Alignment.Center
+                ) {
+                    Text("还没有动态，点右下角发一条", fontSize = 14.sp, color = InkMuted)
+                }
+
+                else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    item { Spacer(Modifier.height(4.dp)) }
+                    items(moments, key = { it.id }) { moment ->
+                        MomentCard(
+                            moment = moment,
+                            comments = comments[moment.id].orEmpty(),
+                            onLike = {
+                                // 先本地翻转，UI 立刻响应，再后台同步
+                                moments = moments.map {
+                                    if (it.id == moment.id) it.copy(yuriLiked = !it.yuriLiked) else it
+                                }
+                                scope.launch {
+                                    withContext(Dispatchers.IO) {
+                                        try { toggleYuriLike(moment.id, moment.yuriLiked) } catch (e: Exception) {}
+                                    }
+                                }
+                            },
+                            onComment = { commentingOn = moment.id },
+                        )
+                    }
+                    item { Spacer(Modifier.height(90.dp)) }
+                }
             }
         }
     }
@@ -192,13 +280,28 @@ fun MomentsPage() {
     if (showPostDialog) {
         PostMomentDialog(
             onDismiss = { showPostDialog = false },
-            onConfirm = { content, author ->
+            onConfirm = { content ->
+                showPostDialog = false
                 scope.launch {
                     withContext(Dispatchers.IO) {
-                        try { postMoment(content, author) } catch (e: Exception) {}
+                        try { postMoment(content, "yuri") } catch (e: Exception) {}
                     }
                     reload()
-                    showPostDialog = false
+                }
+            }
+        )
+    }
+
+    commentingOn?.let { momentId ->
+        CommentDialog(
+            onDismiss = { commentingOn = null },
+            onConfirm = { text ->
+                commentingOn = null
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        try { postComment(momentId, text) } catch (e: Exception) {}
+                    }
+                    reload()
                 }
             }
         )
@@ -206,101 +309,221 @@ fun MomentsPage() {
 }
 
 @Composable
-private fun MomentCard(moment: Moment, onLike: () -> Unit) {
-    val timeStr = remember(moment.createdAt) {
-        try {
-            val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.CHINA)
-            val d = fmt.parse(moment.createdAt) ?: Date()
-            SimpleDateFormat("MM/dd HH:mm", Locale.CHINA).format(d)
-        } catch (e: Exception) { moment.createdAt.take(16) }
-    }
-    val authorLabel = if (moment.author == "sean") "Sean" else "Yuri"
+private fun MomentCard(
+    moment: Moment,
+    comments: List<MomentComment>,
+    onLike: () -> Unit,
+    onComment: () -> Unit,
+) {
+    val mine = isSean(moment.author)
+    val timeStr = remember(moment.createdAt) { formatMomentTime(moment.createdAt) }
+    val name = if (mine) "沈聿淮" else "小鑫"
+    val avatarColors = if (mine) listOf(SeanA, SeanB) else listOf(YuriA, YuriB)
 
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .background(CardBg, RoundedCornerShape(14.dp))
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Surface(
-                modifier = Modifier.size(40.dp),
-                shape = CircleShape,
-                color = if (moment.author == "sean") MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.secondaryContainer,
-            ) {
-                Box(contentAlignment = Alignment.Center) {
+        Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
+            Row(verticalAlignment = Alignment.Top) {
+                // 头像：首字 + 渐变底
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .background(Brush.linearGradient(avatarColors), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
                     Text(
-                        authorLabel.first().toString(),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = if (moment.author == "sean") MaterialTheme.colorScheme.onPrimaryContainer
-                                else MaterialTheme.colorScheme.onSecondaryContainer,
+                        if (mine) "沈" else "鑫",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White,
                     )
                 }
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(name, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = InkMain)
+                    Spacer(Modifier.height(6.dp))
+                    Text(moment.content, fontSize = 14.sp, color = InkSub, lineHeight = 22.sp)
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(timeStr, fontSize = 11.sp, color = InkFaint, modifier = Modifier.weight(1f))
+                        ActionChip(
+                            icon = if (moment.yuriLiked) HugeIcons.FavouriteCircle else HugeIcons.Favourite,
+                            label = if (moment.yuriLiked) "已赞" else "赞",
+                            tint = if (moment.yuriLiked) LikeRed else InkMuted,
+                            onClick = onLike,
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        ActionChip(
+                            icon = null,
+                            label = if (comments.isEmpty()) "评论" else "评论 ${comments.size}",
+                            tint = InkMuted,
+                            onClick = onComment,
+                        )
+                    }
+                }
             }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(authorLabel, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
-                Text(timeStr, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            val hasFooter = moment.liked || !moment.replyContent.isNullOrBlank() || comments.isNotEmpty()
+            if (hasFooter) {
+                Column(modifier = Modifier.fillMaxWidth().padding(start = 48.dp, top = 8.dp)) {
+                    Surface(shape = RoundedCornerShape(10.dp), color = CommentBg) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(10.dp)) {
+                            if (moment.liked) {
+                                Text("♥ 沈聿淮 觉得很好", fontSize = 12.sp, color = LikeRed)
+                                Spacer(Modifier.height(4.dp))
+                            }
+                            // reply_content 是服务器惰性回复写回来的"作者本人补充"
+                            if (!moment.replyContent.isNullOrBlank()) {
+                                CommentLine("沈聿淮", moment.replyContent, isSean = true)
+                            }
+                            comments.forEach { c ->
+                                CommentLine(
+                                    if (isSean(c.author)) "沈聿淮" else "小鑫",
+                                    c.content,
+                                    isSean = isSean(c.author),
+                                )
+                            }
+                        }
+                    }
+                }
             }
-            IconButton(onClick = onLike, modifier = Modifier.size(36.dp)) {
-                Icon(
-                    if (moment.yuriLiked) HugeIcons.FavouriteCircle else HugeIcons.Favourite,
-                    contentDescription = "点赞",
-                    tint = if (moment.yuriLiked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(moment.content, style = MaterialTheme.typography.bodyMedium)
-        if (!moment.replyContent.isNullOrBlank()) {
-            Spacer(Modifier.height(8.dp))
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    text = "Sean：${moment.replyContent}",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        if (moment.liked) {
-            Spacer(Modifier.height(4.dp))
-            Text("♥ Sean 觉得很好", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
         }
     }
 }
 
 @Composable
-private fun PostMomentDialog(
-    onDismiss: () -> Unit,
-    onConfirm: (content: String, author: String) -> Unit,
-) {
-    var content by remember { mutableStateOf("") }
-    var author by remember { mutableStateOf("yuri") }
+private fun CommentLine(name: String, content: String, isSean: Boolean) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+        Text(
+            "$name：",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = if (isSean) SeanA else YuriA,
+        )
+        Text(content, fontSize = 12.sp, color = InkSub, lineHeight = 19.sp)
+    }
+}
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("发动态") },
-        text = {
-            OutlinedTextField(
-                value = content,
-                onValueChange = { content = it },
-                label = { Text("说点什么...") },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 3,
-            )
-        },
-        confirmButton = {
-            FilledTonalButton(onClick = { onConfirm(content, author) }, enabled = content.isNotBlank()) {
-                Text("发出去")
+@Composable
+private fun ActionChip(
+    icon: androidx.compose.ui.graphics.vector.ImageVector?,
+    label: String,
+    tint: Color,
+    onClick: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = CommentBg,
+        modifier = Modifier.clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (icon != null) {
+                Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(4.dp))
             }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+            Text(label, fontSize = 11.sp, color = tint)
+        }
+    }
+}
+
+@Composable
+private fun PostMomentDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    InputDialog(
+        title = "发条动态",
+        placeholder = "此刻在想什么...",
+        confirmLabel = "发出去",
+        minLines = 3,
+        onDismiss = onDismiss,
+        onConfirm = onConfirm,
     )
+}
+
+@Composable
+private fun CommentDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    InputDialog(
+        title = "写评论",
+        placeholder = "说点什么...",
+        confirmLabel = "发送",
+        minLines = 2,
+        onDismiss = onDismiss,
+        onConfirm = onConfirm,
+    )
+}
+
+/**
+ * 自绘输入弹窗。不用 Material3 AlertDialog——它的默认容器色取自 surfaceContainerHigh，
+ * 会被全局透明度设置牵连（此前 Theme.kt 那次踩过的坑）。
+ */
+@Composable
+private fun InputDialog(
+    title: String,
+    placeholder: String,
+    confirmLabel: String,
+    minLines: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var text by remember { mutableStateOf("") }
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(16.dp), color = CardBg, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.fillMaxWidth().padding(18.dp)) {
+                Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = InkMain)
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    placeholder = { Text(placeholder, fontSize = 13.sp, color = InkFaint) },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = minLines,
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(onClick = onDismiss) { Text("取消", fontSize = 13.sp, color = InkMuted) }
+                    TextButton(
+                        onClick = { if (text.isNotBlank()) onConfirm(text.trim()) },
+                        enabled = text.isNotBlank(),
+                    ) {
+                        Text(confirmLabel, fontSize = 13.sp, color = if (text.isNotBlank()) YuriA else InkFaint)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Supabase 返回的是 UTC 时间戳（形如 2026-08-06T16:37:06.52343+00:00）。
+ * 之前用 "yyyy-MM-dd'T'HH:mm:ssXXX" 解析带毫秒的串会直接抛异常，退化成裸截字符串，
+ * 显示的还是 UTC 时间（比北京时间慢 8 小时）。这里先砍掉小数秒再按 UTC 解析、按本地时区输出。
+ */
+private fun formatMomentTime(raw: String): String = runCatching {
+    val cleaned = raw.replace(Regex("""\.\d+"""), "")
+    val parser = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US)
+    val d = parser.parse(cleaned) ?: return raw.take(16)
+    val now = System.currentTimeMillis()
+    val diffMin = (now - d.time) / 60000
+    when {
+        diffMin < 1 -> "刚刚"
+        diffMin < 60 -> "$diffMin 分钟前"
+        diffMin < 60 * 24 -> "${diffMin / 60} 小时前"
+        diffMin < 60 * 24 * 2 -> "昨天 " + local("HH:mm").format(d)
+        else -> local("M月d日 HH:mm").format(d)
+    }
+}.getOrElse { raw.take(16) }
+
+private fun local(pattern: String) = SimpleDateFormat(pattern, Locale.CHINA).apply {
+    timeZone = TimeZone.getDefault()
 }
