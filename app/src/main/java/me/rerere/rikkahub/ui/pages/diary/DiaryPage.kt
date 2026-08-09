@@ -6,14 +6,19 @@
 package me.rerere.rikkahub.ui.pages.diary
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -44,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.data.db.entity.DiaryEntity
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -84,6 +90,8 @@ fun DiaryPage(vm: DiaryVM = koinViewModel()) {
     // tab: 0 = Sean 的日记, 1 = Yuri 的日记
     var tab by remember { mutableStateOf(0) }
     val entries = if (tab == 0) seanEntries else yuriEntries
+    // 点开的那篇日记（null = 没打开详情）。列表卡片只显示摘要，全文靠详情弹窗看。
+    var detailEntry by remember { mutableStateOf<DiaryEntity?>(null) }
 
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(syncMessage) {
@@ -176,9 +184,108 @@ fun DiaryPage(vm: DiaryVM = koinViewModel()) {
                     }
                 } else {
                     items(entries, key = { it.id }) { entry ->
-                        DiaryCard(entry = entry, isSean = tab == 0)
+                        DiaryCard(
+                            entry = entry,
+                            isSean = tab == 0,
+                            onClick = { detailEntry = entry },
+                        )
                     }
                     item { Spacer(Modifier.height(80.dp)) }
+                }
+            }
+        }
+    }
+
+    detailEntry?.let { entry ->
+        DiaryDetailDialog(
+            entry = entry,
+            isSean = entry.author != "yuri",
+            onDismiss = { detailEntry = null },
+        )
+    }
+}
+
+/**
+ * 日记详情弹窗：显示全文（可滚动）。
+ * 不用 Material3 的 AlertDialog——它的默认容器色取自 surfaceContainerHigh，会被全局
+ * 透明度设置牵连，而且内容高度受限不好放长文。这里直接用 Dialog + Surface 自己画。
+ */
+@Composable
+private fun DiaryDetailDialog(entry: DiaryEntity, isSean: Boolean, onDismiss: () -> Unit) {
+    val dateStr = remember(entry.createdAt) {
+        SimpleDateFormat("yyyy年M月d日 · E  HH:mm", Locale.CHINA).format(Date(entry.createdAt))
+    }
+    val barColors = if (isSean) listOf(SeanBarStart, SeanBarEnd) else listOf(YuriBarStart, YuriBarEnd)
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = CardBg,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 620.dp),
+        ) {
+            Box(modifier = Modifier.fillMaxWidth()) {
+                // 左侧色条，跟列表卡片保持一致。
+                // 用 matchParentSize 包一层：色条不参与父容器测量，父高度仍由正文决定，
+                // 直接 fillMaxSize 会把卡片撑到 heightIn 的上限（短日记也变满高）。
+                Box(modifier = Modifier.matchParentSize()) {
+                    Box(
+                        modifier = Modifier
+                            .width(4.dp)
+                            .fillMaxHeight()
+                            .background(
+                                androidx.compose.ui.graphics.Brush.verticalGradient(barColors),
+                                RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp)
+                            )
+                    )
+                }
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 22.dp, end = 18.dp, top = 20.dp, bottom = 16.dp)
+                ) {
+                    Text(dateStr, fontSize = 12.sp, color = InkMuted)
+                    if (entry.title.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            entry.title,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = InkMain,
+                            lineHeight = 24.sp,
+                        )
+                    }
+                    if (entry.emotionAttachment >= 0 || entry.emotionTenderness >= 0 || entry.emotionHeartache >= 0) {
+                        Spacer(Modifier.height(10.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (entry.emotionAttachment >= 0) EmotionTag("依恋", entry.emotionAttachment)
+                            if (entry.emotionTenderness >= 0) EmotionTag("温柔", entry.emotionTenderness)
+                            if (entry.emotionHeartache >= 0) EmotionTag("心跳", entry.emotionHeartache)
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    DashedDivider()
+                    Spacer(Modifier.height(12.dp))
+                    // 正文：不截断，长文可滚动
+                    Text(
+                        entry.content,
+                        fontSize = 14.sp,
+                        color = InkSub,
+                        lineHeight = 23.sp,
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState()),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        TextButton(onClick = onDismiss) {
+                            Text("收起", fontSize = 13.sp, color = InkSub)
+                        }
+                    }
                 }
             }
         }
@@ -204,7 +311,7 @@ private fun DiaryTab(label: String, selected: Boolean, modifier: Modifier = Modi
 }
 
 @Composable
-private fun DiaryCard(entry: DiaryEntity, isSean: Boolean) {
+private fun DiaryCard(entry: DiaryEntity, isSean: Boolean, onClick: () -> Unit = {}) {
     val dateStr = remember(entry.createdAt) {
         SimpleDateFormat("yyyy年M月d日 · E", Locale.CHINA).format(Date(entry.createdAt))
     }
@@ -218,17 +325,21 @@ private fun DiaryCard(entry: DiaryEntity, isSean: Boolean) {
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .background(CardBg, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
     ) {
-        // 左侧色条
-        Box(
-            modifier = Modifier
-                .width(4.dp)
-                .fillMaxSize()
-                .background(
-                    androidx.compose.ui.graphics.Brush.verticalGradient(barColors),
-                    RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp)
-                )
-        )
+        // 左侧色条。LazyColumn item 的 maxHeight 是无限，fillMaxSize 在无限约束下不生效，
+        // 色条会被测成 0 高度（之前卡片左边那条颜色一直看不见就是这个原因）。
+        Box(modifier = Modifier.matchParentSize()) {
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .fillMaxHeight()
+                    .background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(barColors),
+                        RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp)
+                    )
+            )
+        }
         Column(
             modifier = Modifier.padding(start = 20.dp, end = 16.dp, top = 16.dp, bottom = 16.dp)
         ) {
@@ -273,7 +384,14 @@ private fun DiaryCard(entry: DiaryEntity, isSean: Boolean) {
                 }
             }
             Spacer(Modifier.height(10.dp))
-            Text(timeStr, fontSize = 11.sp, color = InkFaint)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(timeStr, fontSize = 11.sp, color = InkFaint)
+                Text("点开看全文 ›", fontSize = 11.sp, color = InkFaint)
+            }
         }
     }
 }
