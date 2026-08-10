@@ -38,7 +38,12 @@ fun buildStickerTools(
             InputSchema.Obj(properties = buildJsonObject {}, required = emptyList())
         },
         execute = {
-            val stickers = stickerRepository.observeAll().first()
+            // 只列出文件真实存在且非空的。库里可能残留指向空文件的记录
+            // （旧版本添加表情包时复制失败也会插记录），列出来只会让我挑到一张发不出去的图。
+            val stickers = stickerRepository.observeAll().first().filter { s ->
+                val f = File(s.filePath)
+                f.exists() && f.length() > 0L
+            }
             val payload = buildJsonArray {
                 stickers.forEach { s ->
                     add(buildJsonObject {
@@ -75,10 +80,17 @@ fun buildStickerTools(
             val id = it.jsonObject["id"]?.jsonPrimitive?.intOrNull ?: error("id is required")
             val stickers = stickerRepository.observeAll().first()
             val sticker = stickers.firstOrNull { s -> s.id == id }
-            if (sticker == null || !File(sticker.filePath).exists()) {
+            val stickerFile = sticker?.let { File(it.filePath) }
+            if (sticker == null || stickerFile == null ||
+                !stickerFile.exists() || stickerFile.length() == 0L
+            ) {
                 listOf(UIMessagePart.Text(buildJsonObject {
                     put("success", false)
-                    put("error", "sticker not found")
+                    put(
+                        "error",
+                        if (sticker == null) "sticker id not found in library"
+                        else "sticker file is missing or empty; ask her to re-add it"
+                    )
                 }.toString()))
             } else {
                 listOf(UIMessagePart.Image(url = "file://${sticker.filePath}"))
