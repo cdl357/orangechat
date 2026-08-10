@@ -925,6 +925,7 @@ private fun CoupleToolsSection(
         ToolEntry(HugeIcons.Sun01, "潮汐", me.rerere.rikkahub.Screen.Tide),
         ToolEntry(HugeIcons.MusicNote02, "朋友圈", me.rerere.rikkahub.Screen.Moments),
         ToolEntry(HugeIcons.Sparkles, "梦境", me.rerere.rikkahub.Screen.Dream),
+        ToolEntry(HugeIcons.QuillWrite01, "他想说的", me.rerere.rikkahub.Screen.Review),
         ToolEntry(HugeIcons.InLove, "我们", me.rerere.rikkahub.Screen.Love),
     )
     Column(
