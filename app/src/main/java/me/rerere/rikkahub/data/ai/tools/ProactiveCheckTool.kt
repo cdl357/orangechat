@@ -365,8 +365,10 @@ private fun buildSystemPrompt(
     appendLine("包名: ${deviceState.foregroundPackage}")
     appendLine()
     appendLine("### 今日应用使用时长")
-    deviceState.appUsage.forEach { (name, pkg, minutes) ->
-        appendLine("- $name ($pkg): ${minutes}分钟")
+    val usageTimeFormat = SimpleDateFormat("HH:mm", Locale.CHINA)
+    deviceState.appUsage.forEach { usage ->
+        val lastUsedStr = usageTimeFormat.format(Date(usage.lastUsed))
+        appendLine("- ${usage.name} (${usage.packageName}): ${usage.minutes}分钟，最后使用 $lastUsedStr")
     }
     appendLine()
     
@@ -406,11 +408,18 @@ SCHEDULE:30
     }
 }
 
+private data class AppUsageInfo(
+    val name: String,
+    val packageName: String,
+    val minutes: Int,
+    val lastUsed: Long,
+)
+
 private data class DeviceState(
     val foregroundAppName: String,
     val foregroundPackage: String,
     val isScreenOn: Boolean,
-    val appUsage: List<Triple<String, String, Int>>,
+    val appUsage: List<AppUsageInfo>,
 )
 
 private fun readDeviceState(context: Context): DeviceState {
@@ -449,7 +458,12 @@ private fun readDeviceState(context: Context): DeviceState {
             val appInfo = context.packageManager.getApplicationInfo(stat.packageName, 0)
             context.packageManager.getApplicationLabel(appInfo).toString()
         } catch (e: Exception) { stat.packageName }
-        Triple(name, stat.packageName, (stat.totalTimeInForeground / 60000).toInt())
+        AppUsageInfo(
+            name = name,
+            packageName = stat.packageName,
+            minutes = (stat.totalTimeInForeground / 60000).toInt(),
+            lastUsed = stat.lastTimeUsed
+        )
     }
     
     val powerManager = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
