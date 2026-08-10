@@ -68,6 +68,8 @@ private val TextMuted = Color(0xFFA0B8CA)
 private val AccentPink = Color(0xFFD4756A)
 private val AccentGold = Color(0xFFC4A35A)
 private val QuoteBorder = Color(0xFF7A9AB5)
+// 已经走过的纪念日：淡暖白底 + 金色数字，不再整张卡变暗
+private val PastCardBg = Color(0xE6FFFAF0)
 
 // 情侣确立日
 private val ANNIVERSARY = LocalDate.of(2026, 7, 9)
@@ -452,21 +454,26 @@ private fun DateItem(
     }
 
     val isPast = daysLeft != null && daysLeft < 0
+    val isToday = daysLeft == 0
+    // 分支顺序很重要：负数必须先判，否则 -32 会先命中 <= 7 分支，
+    // 导致下面的 AccentGold 永远走不到（原来就是这个 bug）
     val countdownColor = when {
         daysLeft == null -> TextSub
+        daysLeft < 0 -> AccentGold      // 已经走过的日子
+        daysLeft == 0 -> AccentPink     // 就是今天
         daysLeft <= 7 -> AccentPink
         daysLeft <= 30 -> AccentBlue
-        daysLeft < 0 -> AccentGold
         else -> TextSub
     }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-            .then(if (isPast) Modifier.alpha(0.6f) else Modifier),
+            .padding(horizontal = 16.dp, vertical = 4.dp),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = QuoteBg),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isPast) PastCardBg else QuoteBg
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Row(
@@ -508,15 +515,19 @@ private fun DateItem(
             if (daysLeft != null) {
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
-                        text = "${abs(daysLeft)}",
-                        fontSize = 24.sp,
+                        text = if (isToday) "今天" else "${abs(daysLeft)}",
+                        fontSize = if (isToday) 20.sp else 24.sp,
                         fontWeight = FontWeight.Light,
-                        color = if (isPast) AccentGold else countdownColor,
+                        color = countdownColor,
                     )
                     Text(
-                        text = if (isPast) "days ago" else "days left",
+                        text = when {
+                            isToday -> "就是今天"
+                            isPast -> "天前"
+                            else -> "天后"
+                        },
                         fontSize = 10.sp,
-                        color = TextMuted,
+                        color = if (isPast) AccentGold.copy(alpha = 0.75f) else TextMuted,
                     )
                 }
             }
