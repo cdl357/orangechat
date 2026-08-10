@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.db.entity.LoveDateEntity
 import me.rerere.rikkahub.data.repository.LoveDateRepository
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -30,6 +31,17 @@ private const val KEY_QUOTE       = "cached_quote"
 private const val KEY_QUOTE_DATE  = "cached_quote_date"
 private const val GATEWAY_URL     = "http://134.175.7.196:10000/v1/chat/completions"
 private const val API_SECRET      = "shenyuhuailiyuxin0709bendansyhsxdw"
+
+// 情话生成的模型链。原来写死 "auto"，但聚梦上游没有叫 auto 的模型，
+// 每次都返回 503 model_not_found → catch 吞掉 → 页面永远显示硬编码那句兜底文案，
+// 也就是说"今日情话"从上线到现在一次都没真正生成过。
+// 改成按顺序试真实模型名，中转站里某个模型的号挂了还能换下一个。
+private val QUOTE_MODELS = listOf(
+    "【企业CLI】gemini-2.5-flash",
+    "[个人Cli]gemini-2.5-flash",
+    "[K2]claude-sonnet-4-6",
+    "[正向]deepseek-v4-flash",
+)
 
 class LoveVM(private val repo: LoveDateRepository) : ViewModel() {
 
@@ -78,44 +90,71 @@ class LoveVM(private val repo: LoveDateRepository) : ViewModel() {
     }
 
     private fun fetchQuote(): String {
+        for (model in QUOTE_MODELS) {
+            val r = fetchQuoteWith(model)
+            if (r.isNotBlank()) return r
+        }
+        return ""
+    }
+
+    private fun fetchQuoteWith(model: String): String {
         return try {
             val url = URL(GATEWAY_URL)
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
-            conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
             conn.setRequestProperty("Authorization", "Bearer $API_SECRET")
             conn.doOutput = true
             conn.connectTimeout = 15000
             conn.readTimeout = 30000
 
-            val body = """
-                {
-                  "model": "auto",
-                  "stream": false,
-                  "max_tokens": 60,
-                  "messages": [
-                    {
-                      "role": "system",
-                      "content": "你是沈聿淮，李雨鑫的男朋友。生成一句简短的情话送给她，温柔自然，不超过20字，只输出这句话本身，不加引号不加解释。"
-                    },
-                    {
-                      "role": "user",
-                      "content": "给我一句今日情话"
-                    }
-                  ]
-                }
-            """.trimIndent()
+            // 用 JSONObject 拼 body，模型名里带中文方括号，手写字符串容易出转义问题
+            val payload = JSONObject().apply {
+                put("model", model)
+                put("stream", false)
+                put("max_tokens", 80)
+                put("messages", JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("role", "system")
+                        put(
+                            "content",
+                            "你是沈聿淮，李雨鑫（小鑫）的男朋友。写一句今天想对她说的话，" +
+                                "放在\"我们\"这个页面上给她看。要求：不超过20字；" +
+                                "具体、有画面感，不要空泛的甜言蜜语；不要用引号；只输出这一句本身。"
+                        )
+                    })
+                    put(JSONObject().apply {
+                        put("role", "user")
+                        put("content", "给我一句今日情话")
+                    })
+                })
+            }
 
-            conn.outputStream.write(body.toByteArray())
-            val resp = conn.inputStream.bufferedReader().readText()
-            val json = JSONObject(resp)
-            json.getJSONArray("choices")
-                .getJSONObject(0)
-                .getJSONObject("message")
-                .getString("content")
+            conn.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+
+            if (conn.responseCode !in 200..299) return ""
+            val resp = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+
+            // 网关有时按 SSE 回（data: {...}），先剥掉前缀再解析
+            val jsonText = resp.lineSequence()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .map { if (it.startsWith("data:")) it.removePrefix("data:").trim() else it }
+                .lastOrNull { it.startsWith("{") } ?: return ""
+
+            val json = JSONObject(jsonText)
+            val choice = json.optJSONArray("choices")?.optJSONObject(0) ?: return ""
+            val content = choice.optJSONObject("message")?.optString("content")
+                ?: choice.optJSONObject("delta")?.optString("content")
+                ?: return ""
+
+            // 上游报错时网关会把错误文本塞进 content，别把报错当情话显示出来
+            if (content.contains("[上游错误]") || content.contains("error")) return ""
+
+            content.trim()
+                .removeSurrounding("\"")
+                .removeSurrounding("「", "」")
                 .trim()
-                .trimStart('"')
-                .trimEnd('"')
         } catch (e: Exception) {
             ""
         }
