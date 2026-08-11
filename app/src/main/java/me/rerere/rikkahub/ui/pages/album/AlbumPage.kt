@@ -673,17 +673,37 @@ private fun PhotoViewerDialog(
     }
 }
 
+/**
+ * 把选中的图片复制进 App 私有目录。返回空字符串表示失败。
+ *
+ * 旧实现是这样的：
+ *     context.contentResolver.openInputStream(uri)?.use { ... }
+ *     outFile.absolutePath          // 不管有没有真写进去，都返回路径
+ *
+ * 那个 `?.` 是问题所在：流打不开时整块 use 被跳过，文件根本没创建，
+ * 但函数照样返回路径、数据库照样插记录，相册里就出现一张永远显示
+ * 占位图的照片。云相册（图还没下载到本地）最容易踩到。
+ *
+ * 表情包那边（copyStickerFile）踩过同一个坑，这是第三次了：
+ * 写完文件必须校验，不能相信"没抛异常就是成功了"。
+ */
 private fun saveImageToPrivate(context: android.content.Context, uri: android.net.Uri, prefix: String): String {
+    val dir = File(context.filesDir, "album_photos").apply { mkdirs() }
+    val outFile = File(dir, "${prefix}_${UUID.randomUUID()}.jpg")
     return try {
-        val dir = File(context.filesDir, "album_photos").apply { mkdirs() }
-        val outFile = File(dir, "${prefix}_${UUID.randomUUID()}.jpg")
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            FileOutputStream(outFile).use { output ->
-                input.copyTo(output)
-            }
+        val input = context.contentResolver.openInputStream(uri)
+            ?: return "".also { outFile.delete() }
+        input.use { ins ->
+            FileOutputStream(outFile).use { out -> ins.copyTo(out) }
         }
-        outFile.absolutePath
+        if (outFile.exists() && outFile.length() > 0L) {
+            outFile.absolutePath
+        } else {
+            outFile.delete()
+            ""
+        }
     } catch (e: Exception) {
+        runCatching { outFile.delete() }
         ""
     }
 }
