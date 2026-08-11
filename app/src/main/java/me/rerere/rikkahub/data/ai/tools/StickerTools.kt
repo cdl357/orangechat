@@ -97,4 +97,20 @@ fun buildStickerTools(
             }
         }
     ),
+
+    Tool(
+        name = "clean_broken_stickers",
+        description = "Delete sticker records whose image file is missing or empty (broken/blank stickers). Use this when the user says her stickers have missing/blank images.",
+        parameters = {
+            InputSchema.Obj(properties = buildJsonObject {}, required = emptyList())
+        },
+        execute = {
+            val count = stickerRepository.cleanBroken()
+            listOf(UIMessagePart.Text(buildJsonObject {
+                put("success", true)
+                put("cleaned", count)
+                put("message", if (count > 0) "已清理 " + count + " 个坏掉的表情包" else "没有坏掉的表情包，都很健康")
+            }.toString()))
+        }
+    ),
 )
