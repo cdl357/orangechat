@@ -64,6 +64,7 @@ import me.rerere.hugeicons.stroke.PlusSign
 import me.rerere.rikkahub.data.db.entity.StickerEntity
 import me.rerere.rikkahub.data.repository.StickerRepository
 import org.koin.compose.koinInject
+import android.os.Environment
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
@@ -413,7 +414,7 @@ private fun AddStickerDialog(
  * 现在复制完必须校验文件存在且非空，不合格就删掉半成品并返回 null。
  */
 private fun copyStickerFile(context: Context, uri: Uri): String? {
-    val dir = File(context.filesDir, "stickers").apply { mkdirs() }
+    val dir = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "stickers").apply { mkdirs() }
     val outFile = File(dir, "sticker_${UUID.randomUUID()}.img")
     return try {
         val input = context.contentResolver.openInputStream(uri)
