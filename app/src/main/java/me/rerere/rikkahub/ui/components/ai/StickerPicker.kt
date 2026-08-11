@@ -143,6 +143,40 @@ fun StickerPicker(
                 )
             }
         } else {
+            // 库里指向空文件的记录（历史遗留：重复保存 + 删除时连坐删文件）。
+            // 挨个长按删太麻烦，给个一键清理。
+            val brokenList = remember(stickers) {
+                stickers.filter {
+                    val f = File(it.filePath)
+                    !f.exists() || f.length() == 0L
+                }
+            }
+            if (brokenList.isNotEmpty()) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 6.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable {
+                            stickerIoScope.launch {
+                                brokenList.forEach { repository.delete(it) }
+                            }
+                        },
+                    color = MaterialTheme.colorScheme.errorContainer,
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "有 ${brokenList.size} 张图的文件已经丢了，点这里清掉记录",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    }
+                }
+            }
+
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 72.dp),
                 modifier = Modifier.fillMaxWidth().weight(1f),
@@ -230,8 +264,25 @@ fun StickerPicker(
                 onAddDialogVisibleChange(false)
             },
             onConfirm = { name, tags ->
-                // 文件已经在本地了，这里只写数据库，很快
-                scope.launch {
+                // 立刻把 pendingPath 清空，等于给"保存"上了一道锁：
+                // 对话框会在这一帧消失，即使手指连点两下也不会插第二条记录。
+                //
+                // 为什么要防：两条记录会指向同一个图片文件。用户看到面板里有两张
+                // 一样的图，删掉一张——删除逻辑连文件一起删——剩下那条就变成
+                // 空白+红角标。这是"表情包变空白"的第三个根因，
+                // 表面现象和前两个（协程被取消、复制失败伪装成成功）一模一样。
+                pendingPath = null
+                onAddDialogVisibleChange(false)
+                // 用进程级作用域写库。原来用的 scope 是 rememberCoroutineScope，
+                // 面板一收起来就被取消，会造成"点了保存但列表里没有"。
+                stickerIoScope.launch {
+                    val f = File(path)
+                    if (!f.exists() || f.length() == 0L) {
+                        withContext(Dispatchers.Main) {
+                            errorText = "图片文件在保存前丢失了，请重新添加一次。"
+                        }
+                        return@launch
+                    }
                     repository.add(
                         StickerEntity(
                             filePath = path,
@@ -241,8 +292,6 @@ fun StickerPicker(
                         )
                     )
                 }
-                pendingPath = null
-                onAddDialogVisibleChange(false)
             }
         )
     }
@@ -257,9 +306,19 @@ fun StickerPicker(
             text = { Text("删除\"${toDelete.name}\"？删除后双方都不能再用了。") },
             confirmButton = {
                 TextButton(onClick = {
-                    scope.launch { repository.delete(toDelete) }
-                    stickerIoScope.launch { runCatching { File(toDelete.filePath).delete() } }
+                    // 是否还有别的记录指向同一个文件。
+                    // 有的话只删这条数据库记录，文件留着——否则另一条记录会变成
+                    // 空白图（历史上重复保存产生的成对记录就是这么互相搞坏的）。
+                    val sharedByOthers = stickers.any {
+                        it.id != toDelete.id && it.filePath == toDelete.filePath
+                    }
                     pendingDeleteSticker = null
+                    stickerIoScope.launch {
+                        repository.delete(toDelete)
+                        if (!sharedByOthers) {
+                            runCatching { File(toDelete.filePath).delete() }
+                        }
+                    }
                 }) {
                     Text("删除", color = MaterialTheme.colorScheme.error)
                 }
