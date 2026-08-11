@@ -14,4 +14,19 @@ class StickerRepository(private val dao: StickerDAO) {
     suspend fun add(item: StickerEntity): Long = dao.insert(item)
     suspend fun delete(item: StickerEntity) = dao.delete(item)
     suspend fun deleteById(id: Int) = dao.deleteById(id)
+    suspend fun update(item: StickerEntity) = dao.update(item)
+
+    suspend fun cleanBroken(): Int {
+        val all = dao.observeAll().first()
+        var count = 0
+        all.forEach { s ->
+            val f = java.io.File(s.filePath)
+            if (!f.exists() || f.length() == 0L) {
+                dao.deleteById(s.id)
+                runCatching { f.delete() }
+                count++
+            }
+        }
+        return count
+    }
 }
