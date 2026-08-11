@@ -30,6 +30,12 @@ class AlbumVM(
 
     fun delete(item: AlbumEntity) { viewModelScope.launch { repo.delete(item) } }
 
+    /** 给某张照片写/改备注。空字符串等于清掉备注。 */
+    fun updateCaption(id: Int, caption: String) {
+        if (id <= 0) return
+        viewModelScope.launch { repo.updateCaption(id, caption.trim()) }
+    }
+
     fun createFolder(name: String, createdBy: String = "sean") {
         if (name.isBlank()) return
         viewModelScope.launch {
