@@ -89,7 +89,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          APK_FILE=$(find app/build/outputs/apk/debug -name "*.apk" -type f | head -1)
+          APK_FILE=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1)
           if [ -z "$APK_FILE" ]; then
             echo "No release APK found!"
             exit 1
