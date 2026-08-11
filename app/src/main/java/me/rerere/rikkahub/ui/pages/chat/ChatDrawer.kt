@@ -918,7 +918,6 @@ private fun CoupleToolsSection(
 ) {
     data class ToolEntry(val icon: androidx.compose.ui.graphics.vector.ImageVector, val label: String, val route: me.rerere.rikkahub.Screen)
     val items = listOf(
-        ToolEntry(HugeIcons.Tick01, "待办", me.rerere.rikkahub.Screen.Todo),
         ToolEntry(HugeIcons.QuillWrite01, "日记", me.rerere.rikkahub.Screen.Diary),
         ToolEntry(HugeIcons.MessageMultiple01, "留言板", me.rerere.rikkahub.Screen.Bulletin),
         ToolEntry(HugeIcons.Notebook01, "相册", me.rerere.rikkahub.Screen.Album),
