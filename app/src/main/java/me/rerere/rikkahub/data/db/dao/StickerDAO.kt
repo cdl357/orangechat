@@ -7,6 +7,7 @@ package me.rerere.rikkahub.data.db.dao
 
 import androidx.room.Dao
 import androidx.room.Delete
+import androidx.room.Update
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -26,4 +27,7 @@ interface StickerDAO {
 
     @Query("DELETE FROM sticker_item WHERE id = :id")
     suspend fun deleteById(id: Int)
+
+    @Update(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun update(item: StickerEntity)
 }
