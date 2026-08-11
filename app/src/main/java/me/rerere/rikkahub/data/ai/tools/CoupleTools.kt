@@ -533,37 +533,43 @@ fun buildCoupleTools(
             // 现在复制失败就直接返回错误，绝不留坏记录。
             val savedPath = copyIntoAlbumDir(context, rawPath)
             if (savedPath == null) {
-                return@Tool listOf(UIMessagePart.Text(buildJsonObject {
+                listOf(UIMessagePart.Text(buildJsonObject {
                     put("success", false)
                     put("error", "读不到这个文件，没有存进相册。file_path=" + rawPath +
                         "。如果是聊天里的图片，先用能拿到本地绝对路径的方式取到它；" +
                         "如果是网络图片，确认 URL 可直接下载。")
                 }.toString()))
-            }
-
-            // 找到（或自动创建）目标相册，确保存进去的图片在相册页面能被看到
-            // （相册页面是三层结构：本子列表 -> 点进一本 -> 照片，未分组的照片不会显示在任何入口）
-            val folders = albumFolderRepository.observeAll().first()
-            val targetFolder = folders.firstOrNull { it.name == folderName }
-                ?: run {
-                    val newId = albumFolderRepository.add(
-                        me.rerere.rikkahub.data.db.entity.AlbumFolderEntity(name = folderName, createdBy = "sean")
+            } else {
+                // 找到（或自动创建）目标相册，确保存进去的图片在相册页面能被看到
+                // （相册页面是三层结构：本子列表 -> 点进一本 -> 照片，
+                //   未分组的照片不会显示在任何入口）
+                val folders = albumFolderRepository.observeAll().first()
+                val targetFolder = folders.firstOrNull { f -> f.name == folderName }
+                    ?: run {
+                        val newId = albumFolderRepository.add(
+                            me.rerere.rikkahub.data.db.entity.AlbumFolderEntity(
+                                name = folderName, createdBy = "sean"
+                            )
+                        )
+                        me.rerere.rikkahub.data.db.entity.AlbumFolderEntity(
+                            id = newId.toInt(), name = folderName, createdBy = "sean"
+                        )
+                    }
+                albumRepository.add(
+                    AlbumEntity(
+                        filePath = savedPath,
+                        caption = caption,
+                        savedBy = "sean",
+                        folderId = targetFolder.id,
                     )
-                    me.rerere.rikkahub.data.db.entity.AlbumFolderEntity(id = newId.toInt(), name = folderName, createdBy = "sean")
-                }
-            val entity = AlbumEntity(
-                filePath = savedPath,
-                caption = caption,
-                savedBy = "sean",
-                folderId = targetFolder.id,
-            )
-            albumRepository.add(entity)
-            listOf(UIMessagePart.Text(buildJsonObject {
-                put("success", true)
-                put("caption", caption)
-                put("folder", targetFolder.name)
-                put("saved_path", savedPath)
-            }.toString()))
+                )
+                listOf(UIMessagePart.Text(buildJsonObject {
+                    put("success", true)
+                    put("caption", caption)
+                    put("folder", targetFolder.name)
+                    put("saved_path", savedPath)
+                }.toString()))
+            }
         }
     ),
 
