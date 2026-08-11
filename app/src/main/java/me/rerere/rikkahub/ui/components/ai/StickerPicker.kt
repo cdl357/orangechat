@@ -226,32 +226,6 @@ fun StickerPicker(
             }
         }
 
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .clickable(enabled = !copying) {
-                    val scope3 = rememberCoroutineScope()
-                    scope3.launch {
-                        val count = repository.cleanBroken()
-                        errorText = if (count > 0) "已清理 " + count + " 个空白表情包" else "没有空白表情包，都很健康"
-                    }
-                },
-            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    "清理空白表情包",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onErrorContainer,
-                )
-            }
-        }
     }
 
     // 选完图、文件已经复制好，填名字+标签
