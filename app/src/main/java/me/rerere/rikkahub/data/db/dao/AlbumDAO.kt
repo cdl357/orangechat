@@ -26,4 +26,12 @@ interface AlbumDAO {
 
     @Query("SELECT * FROM album_item WHERE folder_id = :folderId ORDER BY created_at DESC")
     fun observeByFolder(folderId: Int): Flow<List<AlbumEntity>>
+
+    /**
+     * 只改备注，不动别的字段。
+     * 不用 @Update 整行覆盖是因为那样需要先拿到完整实体，
+     * 而且并发下容易把别处刚改过的字段覆盖回旧值。
+     */
+    @Query("UPDATE album_item SET caption = :caption WHERE id = :id")
+    suspend fun updateCaption(id: Int, caption: String)
 }
