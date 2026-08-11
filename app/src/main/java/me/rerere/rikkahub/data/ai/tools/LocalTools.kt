@@ -648,7 +648,7 @@ class LocalTools(
             tools.add(me.rerere.rikkahub.data.ai.tools.local.takeScreenshotTool(context))
         }
         if (options.contains(LocalToolOption.CoupleTools)) {
-            tools.addAll(buildCoupleTools(todoRepository, diaryRepository, bulletinRepository, albumRepository, albumFolderRepository))
+            tools.addAll(buildCoupleTools(context, todoRepository, diaryRepository, bulletinRepository, albumRepository, albumFolderRepository))
         }
         if (options.contains(LocalToolOption.LoveTools)) {
             tools.addAll(buildLoveTools(context, loveDateRepository))
