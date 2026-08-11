@@ -6,6 +6,8 @@
 
 package me.rerere.rikkahub.data.ai.tools
 
+import android.content.Context
+import android.net.Uri
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.add
@@ -26,15 +28,20 @@ import me.rerere.rikkahub.data.repository.AlbumRepository
 import me.rerere.rikkahub.data.repository.BulletinRepository
 import me.rerere.rikkahub.data.repository.DiaryRepository
 import me.rerere.rikkahub.data.repository.TodoRepository
+import java.io.File
+import java.io.FileOutputStream
+import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
 /**
  * 情侣工具集：待办 / 日记 / 留言板 / 相册。
  * 让 AI（Sean）有意识地主动使用这些生活化功能，而不只是被动等用户操作 UI。
  */
 fun buildCoupleTools(
+    context: Context,
     todoRepository: TodoRepository,
     diaryRepository: DiaryRepository,
     bulletinRepository: BulletinRepository,
@@ -512,9 +519,28 @@ fun buildCoupleTools(
         },
         execute = {
             val params = it.jsonObject
-            val filePath = params["file_path"]?.jsonPrimitive?.contentOrNull ?: error("file_path is required")
+            val rawPath = params["file_path"]?.jsonPrimitive?.contentOrNull ?: error("file_path is required")
             val caption = params["caption"]?.jsonPrimitive?.contentOrNull ?: ""
             val folderName = params["folder_name"]?.jsonPrimitive?.contentOrNull?.takeIf { name -> name.isNotBlank() } ?: "日常"
+
+            // 先把图片复制进 App 自己的目录，再写数据库。
+            //
+            // 以前是直接把传进来的路径字符串塞进库，不复制也不校验。三种情况都会
+            // 留下一条指向空文件的记录，表现就是"存进去了但相册里显示占位图"：
+            //   - content:// URI：授权是临时的，过一会儿就读不了
+            //   - 聊天附件/缓存里的临时文件：被系统清掉
+            //   - 网络 URL：本地压根没有这个文件
+            // 现在复制失败就直接返回错误，绝不留坏记录。
+            val savedPath = copyIntoAlbumDir(context, rawPath)
+            if (savedPath == null) {
+                return@Tool listOf(UIMessagePart.Text(buildJsonObject {
+                    put("success", false)
+                    put("error", "读不到这个文件，没有存进相册。file_path=" + rawPath +
+                        "。如果是聊天里的图片，先用能拿到本地绝对路径的方式取到它；" +
+                        "如果是网络图片，确认 URL 可直接下载。")
+                }.toString()))
+            }
+
             // 找到（或自动创建）目标相册，确保存进去的图片在相册页面能被看到
             // （相册页面是三层结构：本子列表 -> 点进一本 -> 照片，未分组的照片不会显示在任何入口）
             val folders = albumFolderRepository.observeAll().first()
@@ -526,7 +552,7 @@ fun buildCoupleTools(
                     me.rerere.rikkahub.data.db.entity.AlbumFolderEntity(id = newId.toInt(), name = folderName, createdBy = "sean")
                 }
             val entity = AlbumEntity(
-                filePath = filePath,
+                filePath = savedPath,
                 caption = caption,
                 savedBy = "sean",
                 folderId = targetFolder.id,
@@ -536,6 +562,7 @@ fun buildCoupleTools(
                 put("success", true)
                 put("caption", caption)
                 put("folder", targetFolder.name)
+                put("saved_path", savedPath)
             }.toString()))
         }
     ),
@@ -594,3 +621,50 @@ fun buildCoupleTools(
         }
     ),
 )
+
+
+/**
+ * 把图片复制进 App 私有的 album_photos 目录，返回新文件的绝对路径。
+ * 返回 null 表示读不到源文件 —— 这时候调用方必须放弃写库，
+ * 否则相册里会出现一条永远显示占位图的记录。
+ *
+ * 支持三种来源：
+ *   content://          走 ContentResolver
+ *   http:// https://    直接下载
+ *   其它（含 file://）  当本地绝对路径
+ */
+private fun copyIntoAlbumDir(context: Context, rawPath: String): String? {
+    val dir = File(context.filesDir, "album_photos").apply { mkdirs() }
+    val outFile = File(dir, "ai_${UUID.randomUUID()}.jpg")
+    return try {
+        val input = when {
+            rawPath.startsWith("content://") ->
+                context.contentResolver.openInputStream(Uri.parse(rawPath))
+            rawPath.startsWith("http://") || rawPath.startsWith("https://") ->
+                URL(rawPath).openStream()
+            else -> {
+                val src = File(rawPath.removePrefix("file://"))
+                // 源文件就在我们自己的相册目录里，说明已经是存好的图，不用再复制一份
+                if (src.exists() && src.length() > 0L && src.parentFile?.name == "album_photos") {
+                    return src.absolutePath
+                }
+                if (!src.exists() || src.length() == 0L) null else src.inputStream()
+            }
+        } ?: return null.also { outFile.delete() }
+
+        input.use { ins ->
+            FileOutputStream(outFile).use { out -> ins.copyTo(out) }
+        }
+        // 复制完必须校验。不校验的话，流打开了但一个字节都没写进去（网络中断、
+        // 权限过期）同样会返回一个"看起来没问题"的路径。
+        if (outFile.exists() && outFile.length() > 0L) {
+            outFile.absolutePath
+        } else {
+            outFile.delete()
+            null
+        }
+    } catch (e: Exception) {
+        runCatching { outFile.delete() }
+        null
+    }
+}
