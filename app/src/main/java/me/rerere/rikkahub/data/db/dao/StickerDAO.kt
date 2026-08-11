@@ -8,6 +8,7 @@ package me.rerere.rikkahub.data.db.dao
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Update
+import androidx.room.Update
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
