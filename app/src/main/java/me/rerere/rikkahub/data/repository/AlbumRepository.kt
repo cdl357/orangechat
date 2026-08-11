@@ -9,4 +9,5 @@ class AlbumRepository(private val dao: AlbumDAO) {
     suspend fun add(item: AlbumEntity) = dao.insert(item)
     suspend fun delete(item: AlbumEntity) = dao.delete(item)
     suspend fun deleteById(id: Int) = dao.deleteById(id)
+    suspend fun updateCaption(id: Int, caption: String) = dao.updateCaption(id, caption)
 }
