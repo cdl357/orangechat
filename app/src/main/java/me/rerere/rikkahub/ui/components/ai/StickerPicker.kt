@@ -143,37 +143,38 @@ fun StickerPicker(
                 )
             }
         } else {
-            // 库里指向空文件的记录（历史遗留：重复保存 + 删除时连坐删文件）。
-            // 挨个长按删太麻烦，给个一键清理。
-            val brokenList = remember(stickers) {
-                stickers.filter {
-                    val f = File(it.filePath)
-                    !f.exists() || f.length() == 0L
-                }
-            }
-            if (brokenList.isNotEmpty()) {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 6.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .clickable {
-                            stickerIoScope.launch {
-                                brokenList.forEach { repository.delete(it) }
+            // 库里可能残留指向空文件的记录（历史上重复保存 + 删除时连坐删文件造成的）。
+            // 注意 stickers 来自 observeAllValid()，坏记录在 Repository 层就被滤掉了，
+            // 所以不能靠遍历这个列表去发现坏图 —— 那样按钮永远不会出现。
+            // 这里直接把清理交给 repository.cleanBroken()，它自己扫全表。
+            var cleaning by remember { mutableStateOf(false) }
+            var cleanedTip by remember { mutableStateOf<String?>(null) }
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(enabled = !cleaning) {
+                        cleaning = true
+                        stickerIoScope.launch {
+                            val n = runCatching { repository.cleanBroken() }.getOrDefault(0)
+                            withContext(Dispatchers.Main) {
+                                cleaning = false
+                                cleanedTip = if (n > 0) "清掉了 $n 条丢失的记录" else "没有需要清理的"
                             }
-                        },
-                    color = MaterialTheme.colorScheme.errorContainer,
+                        }
+                    },
+                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            "有 ${brokenList.size} 张图的文件已经丢了，点这里清掉记录",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                        )
-                    }
+                    Text(
+                        cleanedTip ?: if (cleaning) "正在清理…" else "图片丢了的表情包？点这里清掉记录",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
 
