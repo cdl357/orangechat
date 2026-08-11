@@ -90,7 +90,7 @@ fun StickerPicker(
 ) {
     val context = LocalContext.current
     val repository: StickerRepository = koinInject()
-    val stickers by repository.observeAll().collectAsState(initial = emptyList())
+    val stickers by repository.observeAllValid().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
 
     // 已经复制好、等着填名字标签的文件路径（不是 Uri）
