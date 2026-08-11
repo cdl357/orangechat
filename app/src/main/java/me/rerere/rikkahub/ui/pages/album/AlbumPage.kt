@@ -18,9 +18,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -328,11 +331,18 @@ private fun AlbumFolderDetailPage(
     // 不支持往里加照片——加照片应该走真实相册本子。
     val isVirtualFolder = folder.id == -1
 
+    // 刚导进来、等着写备注的照片路径。
+    // 存图和写备注分成两步：图先落地（相册给的读权限时效短，拖不得），
+    // 备注可以慢慢写，也可以跳过。
+    var pendingPhotoPath by remember { mutableStateOf<String?>(null) }
+    // 正在编辑备注的已有照片
+    var editingCaptionOf by remember { mutableStateOf<AlbumEntity?>(null) }
+
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let {
             val path = saveImageToPrivate(context, it, "album_${folder.id}")
             if (path.isNotBlank()) {
-                vm.saveImage(filePath = path, savedBy = folder.createdBy, folderId = folder.id)
+                pendingPhotoPath = path
             }
         }
     }
@@ -423,9 +433,100 @@ private fun AlbumFolderDetailPage(
             onDelete = {
                 vm.delete(photo)
                 viewingPhoto = null
+            },
+            onEditCaption = {
+                editingCaptionOf = photo
+                viewingPhoto = null
             }
         )
     }
+
+    // 新导入的照片：写备注
+    pendingPhotoPath?.let { path ->
+        CaptionDialog(
+            title = "给这张照片写点什么",
+            hint = "存的时候是什么心情？看到它想起了什么？\n不想写就跳过，以后点开照片还能补。",
+            initial = "",
+            onDismiss = {
+                // 跳过也要把照片存进去，只是没有备注
+                vm.saveImage(filePath = path, savedBy = folder.createdBy, folderId = folder.id)
+                pendingPhotoPath = null
+            },
+            onConfirm = { text ->
+                vm.saveImage(
+                    filePath = path,
+                    caption = text,
+                    savedBy = folder.createdBy,
+                    folderId = folder.id,
+                )
+                pendingPhotoPath = null
+            },
+            dismissLabel = "跳过",
+        )
+    }
+
+    // 已有照片：改备注
+    editingCaptionOf?.let { photo ->
+        CaptionDialog(
+            title = if (photo.caption.isBlank()) "给这张照片写点什么" else "改一下备注",
+            hint = "当时的心情，或者现在再看到它的感觉。",
+            initial = photo.caption,
+            onDismiss = { editingCaptionOf = null },
+            onConfirm = { text ->
+                vm.updateCaption(photo.id, text)
+                editingCaptionOf = null
+            },
+        )
+    }
+}
+
+/**
+ * 备注编辑框。
+ * 刻意做成多行、不限长度——她说的是"短短的几句话，或者一段话都可以"。
+ * containerColor 写死白色：玻璃主题下 AlertDialog 默认容器色会被全局
+ * 透明度设置调透，字会糊在背景上看不清。
+ */
+@Composable
+private fun CaptionDialog(
+    title: String,
+    hint: String,
+    initial: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+    dismissLabel: String = "取消",
+) {
+    var text by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color.White,
+        title = { Text(title, fontSize = 16.sp, color = TextMain) },
+        text = {
+            Column {
+                Text(hint, fontSize = 12.sp, color = TextSub)
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(160.dp),
+                    placeholder = { Text("写点什么…", fontSize = 13.sp, color = TextSub) },
+                    minLines = 5,
+                    maxLines = 12,
+                )
+                if (text.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text("${text.length} 字", fontSize = 10.sp, color = TextSub)
+                }
+            }
+        },
+        confirmButton = {
+            FilledTonalButton(onClick = { onConfirm(text) }) { Text("保存") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(dismissLabel) }
+        }
+    )
 }
 
 @Composable
@@ -474,6 +575,17 @@ private fun PolaroidCard(photo: AlbumEntity, onClick: () -> Unit) {
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
                 maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                lineHeight = 14.sp,
+            )
+        } else {
+            // 空备注也占一行位置，一是提示可以写，二是让卡片高度别忽高忽低
+            Text(
+                "点开写点什么",
+                fontSize = 9.sp,
+                color = Color(0xFFC0D8E0),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
         Text(
@@ -491,6 +603,7 @@ private fun PhotoViewerDialog(
     photo: AlbumEntity,
     onDismiss: () -> Unit,
     onDelete: () -> Unit,
+    onEditCaption: () -> Unit = {},
 ) {
     val dateStr = remember(photo.createdAt) {
         SimpleDateFormat("yyyy年M月d日 HH:mm", Locale.CHINA).format(Date(photo.createdAt))
@@ -500,7 +613,13 @@ private fun PhotoViewerDialog(
             shape = RoundedCornerShape(16.dp),
             color = Color.White,
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            // 备注可能写得很长，整个内容区要能滚
+            Column(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .heightIn(max = 620.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
                 val file = remember(photo.filePath) { File(photo.filePath) }
                 if (photo.filePath.isNotBlank() && file.exists()) {
                     AsyncImage(
@@ -511,15 +630,42 @@ private fun PhotoViewerDialog(
                     )
                 }
                 Spacer(Modifier.height(12.dp))
+
+                // 备注区：有就显示全文（可点改），没有就显示一句引导
                 if (photo.caption.isNotBlank()) {
-                    Text(photo.caption, fontSize = 14.sp, color = TextMain)
-                    Spacer(Modifier.height(6.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFFF5FBFD))
+                            .clickable(onClick = onEditCaption)
+                            .padding(12.dp)
+                    ) {
+                        Text(photo.caption, fontSize = 14.sp, color = TextMain, lineHeight = 22.sp)
+                        Spacer(Modifier.height(6.dp))
+                        Text("点这里改备注", fontSize = 10.sp, color = TextSub)
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFFF5FBFD))
+                            .clickable(onClick = onEditCaption)
+                            .padding(vertical = 14.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("＋ 写点什么", fontSize = 13.sp, color = AccentBlue)
+                    }
                 }
+
+                Spacer(Modifier.height(10.dp))
                 Text(dateStr, fontSize = 11.sp, color = TextSub)
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     TextButton(onClick = onDelete) { Text("删除", color = Color(0xFFD86060)) }
                     Spacer(Modifier.weight(1f))
+                    TextButton(onClick = onEditCaption) { Text("备注", color = AccentBlue) }
                     TextButton(onClick = onDismiss) { Text("关闭") }
                 }
             }
