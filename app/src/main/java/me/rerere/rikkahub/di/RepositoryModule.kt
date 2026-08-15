@@ -134,7 +134,8 @@ val repositoryModule = module {
     }
     single {
         me.rerere.rikkahub.data.repository.StickerRepository(
-            get<me.rerere.rikkahub.data.db.AppDatabase>().stickerDao()
+            get<me.rerere.rikkahub.data.db.AppDatabase>().stickerDao(),
+            get()
         )
     }
 }
