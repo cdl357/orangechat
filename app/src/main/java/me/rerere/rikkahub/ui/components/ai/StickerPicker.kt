@@ -37,6 +37,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,24 +65,19 @@ import me.rerere.hugeicons.stroke.PlusSign
 import me.rerere.rikkahub.data.db.entity.StickerEntity
 import me.rerere.rikkahub.data.repository.StickerRepository
 import org.koin.compose.koinInject
-import android.os.Environment
 import java.io.File
-import java.io.FileOutputStream
-import java.util.UUID
 
 /**
- * 复制表情包文件用的协程作用域。
- *
- * 不能用 rememberCoroutineScope()：那个作用域跟 Composable 绑定，面板一收起来（离开组合）
- * 协程立刻被取消。之前的表现就是——填完名字点保存、面板收回去，文件只写了一半或者零字节，
- * 于是列表里那张图是空白的，点了也发不出去。所以这里用一个进程级的 IO 作用域。
+ * 进程级 IO 作用域。不用 rememberCoroutineScope()——面板收起协程立刻取消。
  */
 private val stickerIoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 /**
  * 共享表情包面板：人和 AI 用的是同一份库（同一张 sticker_item 表）。
- * 点某张图 = 插入到输入框（由调用方决定要不要跟文字一起发），不直接发送。
- * 长按可以删除；右上角"+"从相册选图进来，选完要求填名字+标签，AI 靠这些标签识别该发哪张。
+ * 点某张图 = 插入到输入框，不直接发送。
+ * 长按可以删除；右上角"+"从相册选图，上传到 Supabase Storage 云端存储。
+ *
+ * 图片存储在云端，换手机/重装/清数据都不会丢。
  */
 @Composable
 fun StickerPicker(
@@ -94,31 +90,23 @@ fun StickerPicker(
     val stickers by repository.observeAllValid().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
 
-    // 已经复制好、等着填名字标签的文件路径（不是 Uri）
-    var pendingPath by remember { mutableStateOf<String?>(null) }
+    // 启动时自动迁移本地表情包到云端（只跑一次）
+    LaunchedEffect(Unit) {
+        stickerIoScope.launch {
+            runCatching { repository.migrateLocalToCloud() }
+        }
+    }
+
+    // 等着填名字标签的 Uri
+    var pendingUri by remember { mutableStateOf<Uri?>(null) }
     var pendingDeleteSticker by remember { mutableStateOf<StickerEntity?>(null) }
     var errorText by remember { mutableStateOf<String?>(null) }
-    var copying by remember { mutableStateOf(false) }
+    var uploading by remember { mutableStateOf(false) }
 
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        // 选中之后立刻复制。相册给的读权限只在当前这一段时间有效，
-        // 拖到"填完名字点保存"之后再复制，权限可能已经失效（云相册尤其容易），
-        // 那时候复制失败就会留下一条指向空文件的记录。
-        copying = true
-        stickerIoScope.launch {
-            val path = copyStickerFile(context, uri)
-            withContext(Dispatchers.Main) {
-                copying = false
-                if (path == null) {
-                    errorText = "这张图读不进来（可能是云端图片还没下载到本地，" +
-                        "或者格式不支持）。先在相册里打开它、等图片完全显示出来，再试一次。"
-                } else {
-                    pendingPath = path
-                    onAddDialogVisibleChange(true)
-                }
-            }
-        }
+        pendingUri = uri
+        onAddDialogVisibleChange(true)
     }
 
     Column(
@@ -128,10 +116,6 @@ fun StickerPicker(
             .padding(12.dp),
     ) {
         if (stickers.isEmpty()) {
-            // 注意：这里必须用 weight(1f) 而不是 fillMaxSize()。
-            // Column 按顺序测量子项，fillMaxSize() 会让这个空状态提示占满整个 320dp 高度，
-            // 导致排在它后面的"+"添加按钮（Surface）被挤压到 0 高度、彻底不可见——
-            // 这就是"没有表情包时看不到+号"的根因。weight(1f) 能让它和下面的按钮正确分享空间。
             Box(
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 contentAlignment = Alignment.Center,
@@ -143,10 +127,6 @@ fun StickerPicker(
                 )
             }
         } else {
-            // 库里可能残留指向空文件的记录（历史上重复保存 + 删除时连坐删文件造成的）。
-            // 注意 stickers 来自 observeAllValid()，坏记录在 Repository 层就被滤掉了，
-            // 所以不能靠遍历这个列表去发现坏图 —— 那样按钮永远不会出现。
-            // 这里直接把清理交给 repository.cleanBroken()，它自己扫全表。
             var cleaning by remember { mutableStateOf(false) }
             var cleanedTip by remember { mutableStateOf<String?>(null) }
             Surface(
@@ -189,14 +169,13 @@ fun StickerPicker(
                     StickerGridItem(
                         sticker = sticker,
                         onClick = {
-                            val f = File(sticker.filePath)
-                            if (f.exists() && f.length() > 0L) {
-                                onStickerPicked(UIMessagePart.Image(url = "file://${sticker.filePath}"))
+                            // 优先用远程 URL
+                            val url = sticker.remoteUrl.ifBlank { null }
+                                ?: "file://${sticker.filePath}".takeIf { File(sticker.filePath).exists() }
+                            if (url != null) {
+                                onStickerPicked(UIMessagePart.Image(url = url))
                             } else {
-                                // 以前这里是 if (exists) {...} 后面什么都没有，
-                                // 文件丢了就静默不响应，表现是"点了没反应"。现在明确告诉她。
-                                errorText = "「${sticker.name}」的图片文件已经不在了，发不出去。" +
-                                    "长按这张可以删掉它。"
+                                errorText = "「${sticker.name}」的图片已丢失，发不出去。长按可以删掉它。"
                             }
                         },
                         onLongClick = { pendingDeleteSticker = sticker },
@@ -209,7 +188,7 @@ fun StickerPicker(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .clickable(enabled = !copying) { imagePicker.launch("image/*") },
+                .clickable(enabled = !uploading) { imagePicker.launch("image/*") },
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
         ) {
             Box(
@@ -218,54 +197,42 @@ fun StickerPicker(
                     .padding(vertical = 10.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                if (copying) {
-                    Text("正在保存…", style = MaterialTheme.typography.bodySmall)
+                if (uploading) {
+                    Text("正在上传…", style = MaterialTheme.typography.bodySmall)
                 } else {
                     Icon(HugeIcons.PlusSign, contentDescription = "添加表情包")
                 }
             }
         }
-
     }
 
-    // 选完图、文件已经复制好，填名字+标签
-    val path = pendingPath
-    if (path != null) {
+    // 选完图，填名字+标签
+    val uri = pendingUri
+    if (uri != null) {
         AddStickerDialog(
             onDismiss = {
-                // 取消就把刚复制的文件删掉，不留孤儿文件
-                stickerIoScope.launch { runCatching { File(path).delete() } }
-                pendingPath = null
+                pendingUri = null
                 onAddDialogVisibleChange(false)
             },
             onConfirm = { name, tags ->
-                // 立刻把 pendingPath 清空，等于给"保存"上了一道锁：
-                // 对话框会在这一帧消失，即使手指连点两下也不会插第二条记录。
-                //
-                // 为什么要防：两条记录会指向同一个图片文件。用户看到面板里有两张
-                // 一样的图，删掉一张——删除逻辑连文件一起删——剩下那条就变成
-                // 空白+红角标。这是"表情包变空白"的第三个根因，
-                // 表面现象和前两个（协程被取消、复制失败伪装成成功）一模一样。
-                pendingPath = null
+                pendingUri = null
                 onAddDialogVisibleChange(false)
-                // 用进程级作用域写库。原来用的 scope 是 rememberCoroutineScope，
-                // 面板一收起来就被取消，会造成"点了保存但列表里没有"。
+                uploading = true
                 stickerIoScope.launch {
-                    val f = File(path)
-                    if (!f.exists() || f.length() == 0L) {
-                        withContext(Dispatchers.Main) {
-                            errorText = "图片文件在保存前丢失了，请重新添加一次。"
-                        }
-                        return@launch
-                    }
-                    repository.add(
-                        StickerEntity(
-                            filePath = path,
-                            name = name,
-                            tags = tags,
-                            addedBy = "yuri",
-                        )
+                    val result = repository.addStickerFromUri(
+                        uri = uri,
+                        name = name,
+                        tags = tags,
+                        addedBy = "yuri",
                     )
+                    withContext(Dispatchers.Main) {
+                        uploading = false
+                        if (result == null) {
+                            errorText = "上传失败，请检查网络后重试。"
+                        } else if (result.remoteUrl.isBlank()) {
+                            errorText = "图片已保存到本地，但上传云端失败。下次打开会自动重试上传。"
+                        }
+                    }
                 }
             }
         )
@@ -281,18 +248,9 @@ fun StickerPicker(
             text = { Text("删除\"${toDelete.name}\"？删除后双方都不能再用了。") },
             confirmButton = {
                 TextButton(onClick = {
-                    // 是否还有别的记录指向同一个文件。
-                    // 有的话只删这条数据库记录，文件留着——否则另一条记录会变成
-                    // 空白图（历史上重复保存产生的成对记录就是这么互相搞坏的）。
-                    val sharedByOthers = stickers.any {
-                        it.id != toDelete.id && it.filePath == toDelete.filePath
-                    }
                     pendingDeleteSticker = null
                     stickerIoScope.launch {
-                        repository.delete(toDelete)
-                        if (!sharedByOthers) {
-                            runCatching { File(toDelete.filePath).delete() }
-                        }
+                        repository.deleteSticker(toDelete)
                     }
                 }) {
                     Text("删除", color = MaterialTheme.colorScheme.error)
@@ -325,11 +283,14 @@ private fun StickerGridItem(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
-    // 文件在不在，进来的时候看一眼。坏掉的图打个角标，让她能认出来长按删掉，
-    // 不然那些空白格子会一直躺在面板里，每次都要试一下才知道点不动。
-    val broken = remember(sticker.filePath) {
-        val f = File(sticker.filePath)
-        !f.exists() || f.length() == 0L
+    // 有远程 URL 的永远不算坏
+    val hasRemote = sticker.remoteUrl.isNotBlank()
+    val broken = remember(sticker.filePath, sticker.remoteUrl) {
+        if (hasRemote) false
+        else {
+            val f = File(sticker.filePath)
+            !f.exists() || f.length() == 0L
+        }
     }
 
     Card(
@@ -342,10 +303,10 @@ private fun StickerGridItem(
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             if (!broken) {
-                // 传 File 而不是裸路径字符串。相册页（AlbumPage）就是这么写的，
-                // Coil 对 File 的处理更明确，不会把本地路径当成网络地址去猜。
+                // 优先用远程 URL 加载（网络图），否则用本地文件
+                val model: Any = if (hasRemote) sticker.remoteUrl else File(sticker.filePath)
                 AsyncImage(
-                    model = File(sticker.filePath),
+                    model = model,
                     contentDescription = sticker.name,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
@@ -391,10 +352,6 @@ private fun AddStickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        // dismissOnClickOutside 默认 true：部分设备上点击输入框弹出键盘时，系统会把
-        // 键盘弹出过程中的窗口尺寸变化误判成"点击了对话框外部"，导致对话框在你刚点进
-        // 输入框、还没来得及打字时就自动关闭（表现就是"点进去就闪退回表情包面板"）。
-        // 关掉这个属性，只允许点取消/保存按钮关闭，从根上避免这个误触发。
         properties = androidx.compose.ui.window.DialogProperties(dismissOnClickOutside = false),
         containerColor = Color.White,
         title = { Text("添加表情包") },
@@ -433,37 +390,4 @@ private fun AddStickerDialog(
             TextButton(onClick = onDismiss) { Text("取消") }
         }
     )
-}
-
-/**
- * 把选中的图片复制进 App 私有目录。
- *
- * 返回 null 表示失败。旧实现是这样的：
- *
- *     context.contentResolver.openInputStream(uri)?.use { ... }
- *     outFile.absolutePath      // 不管有没有真写进去，都返回路径
- *
- * 那个 `?.` 是问题所在：打不开输入流时整块 use 被跳过，文件根本没创建，
- * 但函数照样返回路径、数据库照样插记录，于是列表里出现一张点不动的空白表情包。
- * 现在复制完必须校验文件存在且非空，不合格就删掉半成品并返回 null。
- */
-private fun copyStickerFile(context: Context, uri: Uri): String? {
-    val dir = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), "stickers").apply { mkdirs() }
-    val outFile = File(dir, "sticker_${UUID.randomUUID()}.img")
-    return try {
-        val input = context.contentResolver.openInputStream(uri)
-            ?: return null.also { outFile.delete() }
-        input.use { ins ->
-            FileOutputStream(outFile).use { out -> ins.copyTo(out) }
-        }
-        if (outFile.exists() && outFile.length() > 0L) {
-            outFile.absolutePath
-        } else {
-            outFile.delete()
-            null
-        }
-    } catch (e: Exception) {
-        runCatching { outFile.delete() }
-        null
-    }
 }
