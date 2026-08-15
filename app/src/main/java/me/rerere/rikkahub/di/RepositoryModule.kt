@@ -28,6 +28,7 @@ import me.rerere.workspace.ProotShellRunner
 import me.rerere.workspace.RootfsInstaller
 import me.rerere.workspace.WorkspaceBindMount
 import me.rerere.workspace.WorkspaceManager
+import org.koin.android.ext.koin.androidContext
 import org.koin.dsl.module
 import java.io.File
 
@@ -135,7 +136,7 @@ val repositoryModule = module {
     single {
         me.rerere.rikkahub.data.repository.StickerRepository(
             get<me.rerere.rikkahub.data.db.AppDatabase>().stickerDao(),
-            get()
+            androidContext()
         )
     }
 }
