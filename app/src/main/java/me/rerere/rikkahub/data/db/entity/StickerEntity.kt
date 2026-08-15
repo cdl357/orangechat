@@ -14,6 +14,10 @@ import androidx.room.PrimaryKey
  * name/tags 是给 AI 识别用的：AI 通过 list_stickers 看到每张表情包的名字和标签，
  * 才知道"委屈"该发哪张、"开心"该发哪张，而不是瞎猜文件名。
  * addedBy: "sean" | "yuri" —— 谁加进来的，但双方都能看到全部、都能用全部（真正共享）。
+ *
+ * remoteUrl: 上传到 Supabase Storage 后的公网 URL。
+ * 表情包不再依赖本地文件——换手机/重装/清数据都不会丢图。
+ * filePath 保留做兼容：旧数据迁移期间还没上传的用 filePath 显示。
  */
 @Entity(tableName = "sticker_item")
 data class StickerEntity(
@@ -36,4 +40,8 @@ data class StickerEntity(
 
     @ColumnInfo("created_at")
     val createdAt: Long = System.currentTimeMillis(),
+
+    /** Supabase Storage 公网 URL，有这个就不再依赖本地 filePath */
+    @ColumnInfo("remote_url")
+    val remoteUrl: String = "",
 )
