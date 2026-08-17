@@ -343,7 +343,6 @@ class GenerationHandler(
             val lastMessage = messages.last()
             val updatedParts = lastMessage.parts.flatMap { part ->
                 if (part is UIMessagePart.Tool) {
-                    val updated = executedTools.find { it.toolCallId == part.toolCallId } ?: part
                     // 工具结果里的 Image/Audio（比如 send_sticker/share_album_photo 返回的图片）
                     // 之前只会留在 Tool.output 里，UI 侧的 groupMessageParts 会把所有连续的
                     // Tool part 归到"调用工具"这个可折叠思考链卡片下——图片确实渲染了，
@@ -351,8 +350,13 @@ class GenerationHandler(
                     // 这里把这些媒体 part 提升成消息自己的正常 part（紧跟在对应 Tool part
                     // 后面），groupMessageParts 遇到非 Reasoning/Tool 类型会立刻结束思考链分组，
                     // 于是它们会作为普通消息气泡内容正常显示出来，跟手动发图一样。
-                    val promotedMedia = if (updated.isExecuted) {
-                        updated.output.filter { it is UIMessagePart.Image || it is UIMessagePart.Audio }
+                    //
+                    // ⚠️ 关键：只提升**本轮执行的工具**的媒体。之前 `?: part` 回退会把上一轮
+                    // 执行的工具（它已经 isExecuted=true）再提升一次 → 每多调一次工具就多一张图。
+                    val executed = executedTools.find { it.toolCallId == part.toolCallId }
+                    val updated = executed ?: part
+                    val promotedMedia = if (executed != null) {
+                        executed.output.filter { it is UIMessagePart.Image || it is UIMessagePart.Audio }
                     } else {
                         emptyList()
                     }
