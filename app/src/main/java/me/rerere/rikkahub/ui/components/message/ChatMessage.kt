@@ -7,6 +7,7 @@
 package me.rerere.rikkahub.ui.components.message
  
 import android.content.Intent
+import android.widget.Toast
 import android.graphics.RenderEffect as AndroidRenderEffect
 import android.graphics.Shader
 import android.media.MediaPlayer
@@ -150,7 +151,6 @@ import org.koin.compose.koinInject
 import me.rerere.rikkahub.data.repository.AlbumRepository
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
-import androidx.compose.material3.SnackbarHostState
 
 // ===== 普通气泡真实背景模糊（原型）=====
 // 由 ChatPage 通过 CompositionLocal 下发的共享上下文：
@@ -266,8 +266,6 @@ fun ChatMessage(
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
 ) {
-        val coroutineScope = rememberCoroutineScope()
-    val snackbarHostState = remember { SnackbarHostState() }
     val message = node.messages[node.selectIndex]
     val settings = LocalDisplaySettings.current
     val textStyle = LocalTextStyle.current.copy(
@@ -431,6 +429,10 @@ private fun MessagePartsBlock(
 ) {
     val context = LocalContext.current
     val contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+
+    // 长按图片存相册：图片渲染在这个函数里，所以状态也得声明在这里
+    val albumRepository: AlbumRepository = koinInject()
+    val albumSaveScope = rememberCoroutineScope()
  
     // 消息输出HapticFeedback
     val hapticFeedback = LocalHapticFeedback.current
@@ -706,16 +708,16 @@ private fun MessagePartsBlock(
                                     .clip(MaterialTheme.shapes.medium)
                                     .height(72.dp),
                                 onSaveToAlbum = { url ->
-                                    coroutineScope.launch {
-                                        val result = albumRepository.saveFromUrl(
+                                    albumSaveScope.launch {
+                                        val saved = albumRepository.saveFromUrl(
                                             url = url,
-                                            savedBy = if (message.role == MessageRole.User) "yuri" else "sean"
+                                            savedBy = if (role == MessageRole.USER) "yuri" else "sean"
                                         )
-                                        if (result != null) {
-                                            snackbarHostState.showSnackbar("已保存到相册")
-                                        } else {
-                                            snackbarHostState.showSnackbar("保存失败")
-                                        }
+                                        Toast.makeText(
+                                            context,
+                                            if (saved != null) "已存进相册" else "存不进去，这张图读不到",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
                                     }
                                 }
                             )
