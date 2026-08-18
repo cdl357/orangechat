@@ -486,14 +486,75 @@ fun buildCoupleTools(
         }
     ),
 
+    // ── 相册：看聊天里有哪些图片（拿到本地路径，才能存进相册）────────
+    Tool(
+        name = "list_chat_images",
+        description = """
+            List image files that exist locally on the phone — the pictures she sent you in chat,
+            pictures you generated, and screenshots — newest first, with their absolute file paths.
+            You CANNOT see file paths from the conversation itself, so call this first whenever you
+            want to keep a picture: pick the one you mean by its position/time/size, then pass its
+            file_path to save_to_album. "The photo she just sent" is normally the first item.
+            already_in_album tells you it is already saved, so you do not save it twice.
+        """.trimIndent().replace("\n", " "),
+        parameters = {
+            InputSchema.Obj(
+                properties = buildJsonObject {
+                    put("limit", buildJsonObject {
+                        put("type", "integer")
+                        put("description", "Max images to return, default 10, max 40")
+                    })
+                },
+                required = emptyList()
+            )
+        },
+        execute = {
+            val limit = (it.jsonObject["limit"]?.jsonPrimitive?.intOrNull ?: 10).coerceIn(1, 40)
+
+            // 聊天里的图片实际落在这几个目录：
+            //   upload/  她发的、相机拍的、剪贴板贴的（ChatInput 走 FilesManager 都进这里）
+            //   images/  base64 图片转存的本地文件（模型生图/工具返图）
+            //   album_photos/ 已经在相册里的（列出来只为标记 already_in_album，避免重复存）
+            val exts = setOf("jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif")
+            val savedPaths = albumRepository.observeAll().first().map { p -> p.filePath }.toSet()
+
+            val shots: List<Pair<File, String>> =
+                listOf("upload", "images", "album_photos").flatMap { name ->
+                    val dir = File(context.filesDir, name)
+                    if (!dir.isDirectory) emptyList()
+                    else (dir.listFiles()?.toList() ?: emptyList())
+                        .filter { f -> f.isFile && f.length() > 0L && f.extension.lowercase() in exts }
+                        .map { f -> f to name }
+                }.sortedByDescending { shot -> shot.first.lastModified() }
+
+            val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+            val payload = buildJsonArray {
+                shots.take(limit).forEach { shot ->
+                    add(buildJsonObject {
+                        put("file_path", shot.first.absolutePath)
+                        put("modified_at", fmt.format(Date(shot.first.lastModified())))
+                        put("size_kb", shot.first.length() / 1024)
+                        put("source", shot.second)
+                        put("already_in_album", savedPaths.contains(shot.first.absolutePath))
+                    })
+                }
+            }
+            listOf(UIMessagePart.Text(buildJsonObject {
+                put("total_found", shots.size)
+                put("images", payload)
+            }.toString()))
+        }
+    ),
+
     // ── 相册：把一张已有图片存进共享相册 ──────────────────────────
     Tool(
         name = "save_to_album",
         description = """
-            Save an existing image (by local file path, e.g. from a screenshot you just took)
-            into the shared album. Use this after take_screenshot when the screenshot is worth
-            keeping — a meaningful moment, something funny, a milestone. Do NOT call this for
-            every screenshot, only ones worth remembering.
+            Save an existing image (by local file path) into the shared album.
+            To keep a picture from the conversation, call list_chat_images first to get its
+            file_path — you cannot read paths off the chat yourself. Also works right after
+            take_screenshot. Save what is worth remembering: a meaningful moment, something
+            funny, a milestone. Do NOT save every image you see.
             folder_name is optional: if omitted (or the named album doesn't exist yet), it saves
             into the default "日常" album, auto-creating it if needed. Call create_album_folder
             first if you want to save into a specific named album.
