@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.repository
 
 import android.content.Context
+import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -26,25 +27,32 @@ class AlbumRepository(
     /**
      * 从 URL 保存图片到相册（支持 file:// 和 http(s):// ）
      * @param url 图片地址（file:// 本地路径 或 http(s):// 网络图片）
-     * @param folderId 目标相册 ID（-1 = 未分类）
+     * @param folderId 目标相册 ID（0 = 未分组，UI 里归到"未分类"）
      * @param savedBy "sean" 或 "yuri"
      * @param caption 备注（可选）
      * @return 保存成功的 AlbumEntity，失败返回 null
      */
     suspend fun saveFromUrl(
         url: String,
-        folderId: Int = -1,
+        folderId: Int = 0,
         savedBy: String = "sean",
         caption: String = ""
     ): AlbumEntity? = withContext(Dispatchers.IO) {
         try {
-            val albumDir = File(context.filesDir, "album_images")
+            val albumDir = File(context.filesDir, "album_photos")
             if (!albumDir.exists()) albumDir.mkdirs()
 
             val fileName = "album_${UUID.randomUUID()}.jpg"
             val destFile = File(albumDir, fileName)
 
             when {
+                url.startsWith("content://") -> {
+                    val input = context.contentResolver.openInputStream(Uri.parse(url))
+                        ?: return@withContext null
+                    input.use { ins ->
+                        FileOutputStream(destFile).use { out -> ins.copyTo(out) }
+                    }
+                }
                 url.startsWith("file://") -> {
                     // 本地文件直接复制
                     val srcFile = File(url.removePrefix("file://"))
@@ -65,6 +73,11 @@ class AlbumRepository(
                     if (!srcFile.exists()) return@withContext null
                     srcFile.copyTo(destFile, overwrite = true)
                 }
+            }
+
+            if (!destFile.exists() || destFile.length() == 0L) {
+                destFile.delete()
+                return@withContext null
             }
 
             val entity = AlbumEntity(
