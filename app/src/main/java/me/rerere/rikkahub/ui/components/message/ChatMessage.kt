@@ -146,6 +146,11 @@ import me.rerere.rikkahub.utils.splitIntoBubbleSegments
 import me.rerere.rikkahub.utils.urlDecode
 import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
+import org.koin.compose.koinInject
+import me.rerere.rikkahub.data.repository.AlbumRepository
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import androidx.compose.material3.SnackbarHostState
 
 // ===== 普通气泡真实背景模糊（原型）=====
 // 由 ChatPage 通过 CompositionLocal 下发的共享上下文：
@@ -261,6 +266,8 @@ fun ChatMessage(
     onToolApproval: ((toolCallId: String, approved: Boolean, reason: String) -> Unit)? = null,
     onToolAnswer: ((toolCallId: String, answer: String) -> Unit)? = null,
 ) {
+        val coroutineScope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
     val message = node.messages[node.selectIndex]
     val settings = LocalDisplaySettings.current
     val textStyle = LocalTextStyle.current.copy(
@@ -697,7 +704,20 @@ private fun MessagePartsBlock(
                                 contentDescription = null,
                                 modifier = Modifier
                                     .clip(MaterialTheme.shapes.medium)
-                                    .height(72.dp)
+                                    .height(72.dp),
+                                onSaveToAlbum = { url ->
+                                    coroutineScope.launch {
+                                        val result = albumRepository.saveFromUrl(
+                                            url = url,
+                                            savedBy = if (message.role == MessageRole.User) "yuri" else "sean"
+                                        )
+                                        if (result != null) {
+                                            snackbarHostState.showSnackbar("已保存到相册")
+                                        } else {
+                                            snackbarHostState.showSnackbar("保存失败")
+                                        }
+                                    }
+                                }
                             )
                         }
                     }
