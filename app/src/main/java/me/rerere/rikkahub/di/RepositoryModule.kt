@@ -119,7 +119,8 @@ val repositoryModule = module {
 
     single {
         AlbumRepository(
-            get<me.rerere.rikkahub.data.db.AppDatabase>().albumDao()
+            get<me.rerere.rikkahub.data.db.AppDatabase>().albumDao(),
+            androidContext()
         )
     }
 
