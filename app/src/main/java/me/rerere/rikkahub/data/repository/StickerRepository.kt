@@ -6,6 +6,8 @@
 package me.rerere.rikkahub.data.repository
 
 import android.content.Context
+import android.net.Uri
+import android.webkit.MimeTypeMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -67,10 +69,42 @@ class StickerRepository(
     }
 
     /**
+     * 根据 Uri 推断 MIME type，返回如 "image/gif", "image/png", "image/jpeg" 等。
+     * 回退默认 "image/png"。
+     */
+    private fun resolveMimeType(uri: Uri): String {
+        // 先试 ContentResolver
+        val fromCr = context.contentResolver.getType(uri)
+        if (!fromCr.isNullOrBlank() && fromCr.startsWith("image/")) return fromCr
+
+        // 再试扩展名
+        val ext = MimeTypeMap.getFileExtensionFromUrl(uri.toString())
+        if (!ext.isNullOrBlank()) {
+            val fromExt = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext.lowercase())
+            if (!fromExt.isNullOrBlank() && fromExt.startsWith("image/")) return fromExt
+        }
+
+        return "image/png"
+    }
+
+    /**
+     * 从 MIME type 得到文件扩展名（不带点），如 "gif", "png", "jpeg", "webp"。
+     */
+    private fun extensionFromMime(mime: String): String {
+        return when {
+            mime.contains("gif") -> "gif"
+            mime.contains("webp") -> "webp"
+            mime.contains("jpeg") || mime.contains("jpg") -> "jpg"
+            mime.contains("svg") -> "svg"
+            else -> "png"
+        }
+    }
+
+    /**
      * 上传图片到 Supabase Storage，返回公网 URL。
      * 失败返回 null。
      */
-    suspend fun uploadToCloud(inputStream: InputStream, fileName: String): String? =
+    suspend fun uploadToCloud(inputStream: InputStream, fileName: String, mimeType: String = "image/png"): String? =
         withContext(Dispatchers.IO) {
             try {
                 val bytes = inputStream.readBytes()
@@ -80,7 +114,7 @@ class StickerRepository(
                 val conn = URL(uploadUrl).openConnection() as HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Authorization", "Bearer $SUPABASE_KEY")
-                conn.setRequestProperty("Content-Type", "image/png")
+                conn.setRequestProperty("Content-Type", mimeType)
                 conn.setRequestProperty("x-upsert", "true")
                 conn.doOutput = true
                 conn.connectTimeout = 30_000
@@ -103,11 +137,18 @@ class StickerRepository(
 
     /**
      * 上传本地文件到 Supabase Storage，返回公网 URL。
-     * 用于从 Uri 复制后的本地文件上传。
+     * 根据文件扩展名推断 MIME type（支持 gif/webp/jpg/png）。
      */
     suspend fun uploadFileToCloud(file: File): String? {
         if (!file.exists() || file.length() == 0L) return null
-        return file.inputStream().use { uploadToCloud(it, file.name) }
+        val mime = when (file.extension.lowercase()) {
+            "gif" -> "image/gif"
+            "webp" -> "image/webp"
+            "jpg", "jpeg" -> "image/jpeg"
+            "svg" -> "image/svg+xml"
+            else -> "image/png"
+        }
+        return file.inputStream().use { uploadToCloud(it, file.name, mime) }
     }
 
     /**
@@ -138,19 +179,24 @@ class StickerRepository(
     }
 
     /**
-     * 从 Uri 选图 → 上传云端 → 返回 (本地路径用于临时预览, 远程 URL)。
+     * 从 Uri 选图 → 上传云端 → 返回 StickerEntity。
+     * 正确保留原始 MIME type（gif/webp/png/jpg 都行）。
      * 如果上传失败，远程 URL 为空，暂存本地路径兜底。
      */
     suspend fun addStickerFromUri(
-        uri: android.net.Uri,
+        uri: Uri,
         name: String,
         tags: String,
         addedBy: String = "yuri"
     ): StickerEntity? = withContext(Dispatchers.IO) {
-        // 1. 先复制到本地临时文件
+        // 1. 推断 MIME type 和正确扩展名
+        val mimeType = resolveMimeType(uri)
+        val ext = extensionFromMime(mimeType)
+
+        // 2. 复制到本地临时文件（保留正确扩展名）
         val stickersDir = File(context.filesDir, "stickers")
         stickersDir.mkdirs()
-        val destFile = File(stickersDir, "${System.currentTimeMillis()}_${UUID.randomUUID()}.png")
+        val destFile = File(stickersDir, "${System.currentTimeMillis()}_${UUID.randomUUID()}.$ext")
 
         val inputStream = context.contentResolver.openInputStream(uri) ?: return@withContext null
         inputStream.use { input ->
@@ -163,10 +209,12 @@ class StickerRepository(
             return@withContext null
         }
 
-        // 2. 上传到 Supabase Storage
-        val remoteUrl = uploadFileToCloud(destFile) ?: ""
+        // 3. 上传到 Supabase Storage（用正确的 MIME type）
+        val remoteUrl = destFile.inputStream().use { stream ->
+            uploadToCloud(stream, destFile.name, mimeType)
+        } ?: ""
 
-        // 3. 存数据库
+        // 4. 存数据库
         val entity = StickerEntity(
             filePath = destFile.absolutePath,
             name = name,
@@ -176,7 +224,7 @@ class StickerRepository(
         )
         val id = dao.insert(entity)
 
-        // 4. 如果上传成功，可以删本地文件
+        // 5. 如果上传成功，可以删本地文件
         if (remoteUrl.isNotBlank()) {
             runCatching { destFile.delete() }
         }
