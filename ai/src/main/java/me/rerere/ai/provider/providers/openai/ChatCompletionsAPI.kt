@@ -604,11 +604,16 @@ class ChatCompletionsAPI(
         // 模型不支持 IMAGE 时直接跳过 Image part, 不再发给 API。
         val supportsImage = model.inputModalities.contains(Modality.IMAGE)
 
-        filteredMessages.forEach { message ->
+        // 图片衰减：只有最新 user 消息保留完整 base64 图片数据，
+        // 历史消息的图片不发送，避免每轮请求重传几 MB 的 base64（App→服务器传输瓶颈）
+        val lastUserIndex = filteredMessages.indexOfLast { it.role == MessageRole.USER }
+
+        filteredMessages.forEachIndexed { index, message ->
+            val keepImages = supportsImage && index >= lastUserIndex
             if (message.role == MessageRole.ASSISTANT) {
-                addAssistantMessages(message, includeReasoning = true, supportsImage = supportsImage)
+                addAssistantMessages(message, includeReasoning = true, supportsImage = keepImages)
             } else {
-                addNonAssistantMessage(message, supportsImage = supportsImage)
+                addNonAssistantMessage(message, supportsImage = keepImages)
             }
         }
     }
