@@ -81,51 +81,102 @@ fun UIMessagePart.Image.encodeBase64(withPrefix: Boolean = true): Result<Encoded
             EncodedImage(base64 = url, mimeType = mimeType)
         }
         this.url.startsWith("http") -> {
-            // HTTP URL：从 URL 扩展名推断 MIME type，避免 MIME mismatch 错误
-            val mimeType = guessHttpMimeType(url)
-            EncodedImage(base64 = url, mimeType = mimeType)
+            // HTTP URL：下载图片 → 从 magic bytes 检测真实 MIME → 编码成 base64
+            // 不能把 URL 原样传给中转站——中转站会用 URL 扩展名推断 MIME type，
+            // 导致 GIF 被标成 image/jpeg → Bedrock 报 IMAGE_MIME_MISMATCH。
+            val (bytes, detectedMime) = downloadAndDetectMime(url)
+            val (encoded, outputMime) = bytesCompressAndEncode(bytes, detectedMime)
+            EncodedImage(
+                base64 = if (withPrefix) "data:$outputMime;base64,$encoded" else encoded,
+                mimeType = outputMime
+            )
         }
         else -> throw IllegalArgumentException("Unsupported URL format: $url")
     }
 }
 
 /**
- * 根据 HTTP URL 的路径扩展名推断 MIME type。
- * 如果无法判断，尝试发 HEAD 请求获取 Content-Type。
- * 最终兜底返回 "image/jpeg"（比 image/png 更安全，因为大多数图片经过压缩后是 jpeg）。
+ * 下载 HTTP URL 的图片字节，并从 magic bytes 检测真实 MIME type。
+ * 超时 15 秒。不信任服务器的 Content-Type（Supabase 可能标错）。
  */
-private fun guessHttpMimeType(url: String): String {
-    // 先从 URL 路径推断
-    val path = try { URL(url).path.lowercase() } catch (_: Exception) { "" }
-    val extMime = when {
-        path.endsWith(".gif") -> "image/gif"
-        path.endsWith(".png") -> "image/png"
-        path.endsWith(".webp") -> "image/webp"
-        path.endsWith(".jpg") || path.endsWith(".jpeg") -> "image/jpeg"
-        path.endsWith(".svg") -> "image/svg+xml"
-        else -> null
-    }
-    if (extMime != null) return extMime
+private fun downloadAndDetectMime(imageUrl: String): Pair<ByteArray, String> {
+    val conn = URL(imageUrl).openConnection() as HttpURLConnection
+    conn.requestMethod = "GET"
+    conn.connectTimeout = 15_000
+    conn.readTimeout = 15_000
+    conn.instanceFollowRedirects = true
 
-    // URL 无扩展名时，尝试 HEAD 请求获取 Content-Type（超时 5 秒，失败不报错）
+    val bytes = conn.inputStream.use { it.readBytes() }
+    conn.disconnect()
+
+    val mime = detectMimeFromBytes(bytes)
+    return Pair(bytes, mime)
+}
+
+/**
+ * 从字节数组的 magic bytes 检测真实 MIME type。
+ */
+private fun detectMimeFromBytes(bytes: ByteArray): String {
+    if (bytes.size < 12) return "image/png"
+
+    // GIF: "GIF89a" or "GIF87a"
+    val header6 = bytes.copyOfRange(0, 6).toString(Charsets.US_ASCII)
+    if (header6 == "GIF89a" || header6 == "GIF87a") return "image/gif"
+
+    // JPEG: FF D8
+    if (bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte()) return "image/jpeg"
+
+    // PNG: 89 50 4E 47 0D 0A 1A 0A
+    if (bytes[0] == 0x89.toByte() && bytes[1] == 0x50.toByte() &&
+        bytes[2] == 0x4E.toByte() && bytes[3] == 0x47.toByte()) return "image/png"
+
+    // WebP: "RIFF" + 4 bytes + "WEBP"
+    val riff = bytes.copyOfRange(0, 4).toString(Charsets.US_ASCII)
+    val webp = bytes.copyOfRange(8, 12).toString(Charsets.US_ASCII)
+    if (riff == "RIFF" && webp == "WEBP") return "image/webp"
+
+    return "image/png"
+}
+
+/**
+ * 对下载的字节进行压缩编码。GIF 保持原样（动图），其他格式压缩成 JPEG。
+ */
+private fun bytesCompressAndEncode(
+    bytes: ByteArray,
+    mimeType: String,
+    maxDimension: Int = 10_000,
+    maxPixels: Long = 16_000_000L,
+    quality: Int = 85
+): Pair<String, String> {
+    // GIF 保持原样（可能是动图）
+    if (mimeType == "image/gif") {
+        val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
+        return Pair(encoded, "image/gif")
+    }
+
+    // 其他格式解码 → 压缩成 JPEG
+    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+
+    options.inSampleSize = calculateImageInSampleSize(
+        width = options.outWidth,
+        height = options.outHeight,
+        maxDimension = maxDimension,
+        maxPixels = maxPixels
+    )
+    options.inJustDecodeBounds = false
+
+    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        ?: throw IllegalArgumentException("Failed to decode downloaded image")
+
     return try {
-        val conn = URL(url).openConnection() as HttpURLConnection
-        conn.requestMethod = "HEAD"
-        conn.connectTimeout = 5_000
-        conn.readTimeout = 5_000
-        conn.instanceFollowRedirects = true
-        val ct = conn.contentType?.lowercase() ?: ""
-        conn.disconnect()
-        when {
-            "gif" in ct -> "image/gif"
-            "png" in ct -> "image/png"
-            "webp" in ct -> "image/webp"
-            "jpeg" in ct || "jpg" in ct -> "image/jpeg"
-            "svg" in ct -> "image/svg+xml"
-            else -> "image/jpeg"
+        val baos = ByteArrayOutputStream()
+        Base64OutputStream(baos, Base64.NO_WRAP).use { base64Stream ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, quality, base64Stream)
         }
-    } catch (_: Exception) {
-        "image/jpeg"
+        Pair(baos.toString(Charsets.ISO_8859_1.name()), "image/jpeg")
+    } finally {
+        bitmap.recycle()
     }
 }
 
