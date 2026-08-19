@@ -7,7 +7,6 @@ package me.rerere.rikkahub.data.repository
 
 import android.content.Context
 import android.net.Uri
-import android.webkit.MimeTypeMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -69,26 +68,44 @@ class StickerRepository(
     }
 
     /**
-     * 根据 Uri 推断 MIME type，返回如 "image/gif", "image/png", "image/jpeg" 等。
-     * 回退默认 "image/png"。
+     * 从文件的 magic bytes 检测真实 MIME type。
+     * 不依赖 ContentResolver（某些机型 ContentResolver 会把 GIF 误报为 jpeg）。
      */
-    private fun resolveMimeType(uri: Uri): String {
-        // 先试 ContentResolver
-        val fromCr = context.contentResolver.getType(uri)
-        if (!fromCr.isNullOrBlank() && fromCr.startsWith("image/")) return fromCr
+    private fun detectMimeFromFile(file: File): String {
+        if (!file.exists() || file.length() < 12) return "image/png"
+        return try {
+            file.inputStream().use { input ->
+                val bytes = ByteArray(16)
+                val read = input.read(bytes)
+                if (read < 8) return "image/png"
 
-        // 再试扩展名
-        val ext = MimeTypeMap.getFileExtensionFromUrl(uri.toString())
-        if (!ext.isNullOrBlank()) {
-            val fromExt = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext.lowercase())
-            if (!fromExt.isNullOrBlank() && fromExt.startsWith("image/")) return fromExt
+                // GIF: "GIF89a" or "GIF87a"
+                val header6 = bytes.copyOfRange(0, 6).toString(Charsets.US_ASCII)
+                if (header6 == "GIF89a" || header6 == "GIF87a") return "image/gif"
+
+                // JPEG: FF D8
+                if (bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte()) return "image/jpeg"
+
+                // PNG: 89 50 4E 47 0D 0A 1A 0A
+                if (bytes[0] == 0x89.toByte() && bytes[1] == 0x50.toByte() &&
+                    bytes[2] == 0x4E.toByte() && bytes[3] == 0x47.toByte()) return "image/png"
+
+                // WebP: "RIFF" + 4 bytes + "WEBP"
+                if (read >= 12) {
+                    val riff = bytes.copyOfRange(0, 4).toString(Charsets.US_ASCII)
+                    val webp = bytes.copyOfRange(8, 12).toString(Charsets.US_ASCII)
+                    if (riff == "RIFF" && webp == "WEBP") return "image/webp"
+                }
+
+                "image/png"
+            }
+        } catch (_: Exception) {
+            "image/png"
         }
-
-        return "image/png"
     }
 
     /**
-     * 从 MIME type 得到文件扩展名（不带点），如 "gif", "png", "jpeg", "webp"。
+     * 从 MIME type 得到文件扩展名（不带点）。
      */
     private fun extensionFromMime(mime: String): String {
         return when {
@@ -137,24 +154,17 @@ class StickerRepository(
 
     /**
      * 上传本地文件到 Supabase Storage，返回公网 URL。
-     * 根据文件扩展名推断 MIME type（支持 gif/webp/jpg/png）。
+     * MIME type 从文件 magic bytes 检测（不信任扩展名）。
      */
     suspend fun uploadFileToCloud(file: File): String? {
         if (!file.exists() || file.length() == 0L) return null
-        val mime = when (file.extension.lowercase()) {
-            "gif" -> "image/gif"
-            "webp" -> "image/webp"
-            "jpg", "jpeg" -> "image/jpeg"
-            "svg" -> "image/svg+xml"
-            else -> "image/png"
-        }
+        val mime = detectMimeFromFile(file)
         return file.inputStream().use { uploadToCloud(it, file.name, mime) }
     }
 
     /**
      * 启动时迁移：把所有还没上传的本地表情包批量上传到云端。
      * 成功的更新 remoteUrl，失败的跳过下次再来。
-     * 全部完成后可以安全删除本地文件（但不强制删，让系统自己清理）。
      */
     suspend fun migrateLocalToCloud() = withContext(Dispatchers.IO) {
         val all = dao.observeAll().first()
@@ -179,9 +189,8 @@ class StickerRepository(
     }
 
     /**
-     * 从 Uri 选图 → 上传云端 → 返回 StickerEntity。
-     * 正确保留原始 MIME type（gif/webp/png/jpg 都行）。
-     * 如果上传失败，远程 URL 为空，暂存本地路径兜底。
+     * 从 Uri 选图 → 复制到本地 → 用 magic bytes 检测真实 MIME → 上传云端。
+     * 不信任 ContentResolver.getType()（已知 HONOR 等机型会把 GIF 误报为 jpeg）。
      */
     suspend fun addStickerFromUri(
         uri: Uri,
@@ -189,32 +198,36 @@ class StickerRepository(
         tags: String,
         addedBy: String = "yuri"
     ): StickerEntity? = withContext(Dispatchers.IO) {
-        // 1. 推断 MIME type 和正确扩展名
-        val mimeType = resolveMimeType(uri)
-        val ext = extensionFromMime(mimeType)
-
-        // 2. 复制到本地临时文件（保留正确扩展名）
+        // 1. 先复制到本地临时文件（先用 .tmp 扩展名，稍后改名）
         val stickersDir = File(context.filesDir, "stickers")
         stickersDir.mkdirs()
-        val destFile = File(stickersDir, "${System.currentTimeMillis()}_${UUID.randomUUID()}.$ext")
+        val tmpFile = File(stickersDir, "${System.currentTimeMillis()}_${UUID.randomUUID()}.tmp")
 
         val inputStream = context.contentResolver.openInputStream(uri) ?: return@withContext null
         inputStream.use { input ->
-            destFile.outputStream().use { output ->
+            tmpFile.outputStream().use { output ->
                 input.copyTo(output)
             }
         }
 
-        if (!destFile.exists() || destFile.length() == 0L) {
+        if (!tmpFile.exists() || tmpFile.length() == 0L) {
             return@withContext null
         }
 
-        // 3. 上传到 Supabase Storage（用正确的 MIME type）
+        // 2. 从文件 magic bytes 检测真实 MIME type（不信任 ContentResolver）
+        val mimeType = detectMimeFromFile(tmpFile)
+        val ext = extensionFromMime(mimeType)
+
+        // 3. 用正确的扩展名重命名
+        val destFile = File(stickersDir, "${tmpFile.nameWithoutExtension}.$ext")
+        tmpFile.renameTo(destFile)
+
+        // 4. 上传到 Supabase Storage（用正确的 MIME type）
         val remoteUrl = destFile.inputStream().use { stream ->
             uploadToCloud(stream, destFile.name, mimeType)
         } ?: ""
 
-        // 4. 存数据库
+        // 5. 存数据库
         val entity = StickerEntity(
             filePath = destFile.absolutePath,
             name = name,
@@ -224,7 +237,7 @@ class StickerRepository(
         )
         val id = dao.insert(entity)
 
-        // 5. 如果上传成功，可以删本地文件
+        // 6. 如果上传成功，可以删本地文件
         if (remoteUrl.isNotBlank()) {
             runCatching { destFile.delete() }
         }
