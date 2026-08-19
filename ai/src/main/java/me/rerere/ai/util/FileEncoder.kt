@@ -1,4 +1,4 @@
-﻿/*
+/*
  * 橘瓣 OrangeChat
  * 衍生自 RikkaHub (https://github.com/rikkahub/rikkahub)，原作者 RE
  * 本项目基于 GNU AGPL v3 开源，详见根目录 LICENSE 文件
@@ -16,6 +16,8 @@ import androidx.core.net.toUri
 import me.rerere.ai.ui.UIMessagePart
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 
 private val supportedTypes = setOf(
     "image/jpeg",
@@ -79,10 +81,51 @@ fun UIMessagePart.Image.encodeBase64(withPrefix: Boolean = true): Result<Encoded
             EncodedImage(base64 = url, mimeType = mimeType)
         }
         this.url.startsWith("http") -> {
-            // HTTP URL 无法确定 mime type，默认使用 image/png
-            EncodedImage(base64 = url, mimeType = "image/png")
+            // HTTP URL：从 URL 扩展名推断 MIME type，避免 MIME mismatch 错误
+            val mimeType = guessHttpMimeType(url)
+            EncodedImage(base64 = url, mimeType = mimeType)
         }
         else -> throw IllegalArgumentException("Unsupported URL format: $url")
+    }
+}
+
+/**
+ * 根据 HTTP URL 的路径扩展名推断 MIME type。
+ * 如果无法判断，尝试发 HEAD 请求获取 Content-Type。
+ * 最终兜底返回 "image/jpeg"（比 image/png 更安全，因为大多数图片经过压缩后是 jpeg）。
+ */
+private fun guessHttpMimeType(url: String): String {
+    // 先从 URL 路径推断
+    val path = try { URL(url).path.lowercase() } catch (_: Exception) { "" }
+    val extMime = when {
+        path.endsWith(".gif") -> "image/gif"
+        path.endsWith(".png") -> "image/png"
+        path.endsWith(".webp") -> "image/webp"
+        path.endsWith(".jpg") || path.endsWith(".jpeg") -> "image/jpeg"
+        path.endsWith(".svg") -> "image/svg+xml"
+        else -> null
+    }
+    if (extMime != null) return extMime
+
+    // URL 无扩展名时，尝试 HEAD 请求获取 Content-Type（超时 5 秒，失败不报错）
+    return try {
+        val conn = URL(url).openConnection() as HttpURLConnection
+        conn.requestMethod = "HEAD"
+        conn.connectTimeout = 5_000
+        conn.readTimeout = 5_000
+        conn.instanceFollowRedirects = true
+        val ct = conn.contentType?.lowercase() ?: ""
+        conn.disconnect()
+        when {
+            "gif" in ct -> "image/gif"
+            "png" in ct -> "image/png"
+            "webp" in ct -> "image/webp"
+            "jpeg" in ct || "jpg" in ct -> "image/jpeg"
+            "svg" in ct -> "image/svg+xml"
+            else -> "image/jpeg"
+        }
+    } catch (_: Exception) {
+        "image/jpeg"
     }
 }
 
