@@ -98,6 +98,7 @@ private fun skinOf(kind: String): KindSkin = when (kind) {
     "forum_reply" -> KindSkin("回帖", "要发到花园的某个帖子下面", Color(0xFF7E96A8), Color(0xFFA6BAC8))
     "forum_thread" -> KindSkin("发帖", "要在花园发一个新帖子", Color(0xFF8B8FB0), Color(0xFFB2B5CE))
     "email_out" -> KindSkin("寄信", "要发给花园外面的人", Color(0xFFC49A6C), Color(0xFFDCBB94))
+    "activity_log" -> KindSkin("独处记录", "他这次独处做了什么、想了什么", Color(0xFF8DAF88), Color(0xFFB3CFB0))
     else -> KindSkin(kind, "", Color(0xFF9A968C), Color(0xFFBDB8AE))
 }
 
@@ -174,8 +175,9 @@ fun ReviewPage() {
 
     LaunchedEffect(Unit) { reload() }
 
-    val pending = all.filter { it.status == "pending" }
-    val history = all.filter { it.status != "pending" }
+    // "待你看" = pending + info(活动记录)
+    val pending = all.filter { it.status == "pending" || it.status == "info" }
+    val history = all.filter { it.status != "pending" && it.status != "info" }
     val shown = if (showHistory) history else pending
 
     Scaffold(
@@ -247,6 +249,16 @@ fun ReviewPage() {
                                 }
                             },
                             onReject = { rejecting = a },
+                            onMarkRead = {
+                                all = all.map {
+                                    if (it.id == a.id) it.copy(status = "read") else it
+                                }
+                                scope.launch {
+                                    withContext(Dispatchers.IO) {
+                                        runCatching { setStatus(a.id, "read") }
+                                    }
+                                }
+                            },
                         )
                     }
                     item { Spacer(Modifier.height(40.dp)) }
@@ -293,11 +305,13 @@ private fun ActionCard(
     action: PendingAction,
     onApprove: () -> Unit,
     onReject: () -> Unit,
+    onMarkRead: () -> Unit,
 ) {
     val skin = remember(action.kind) { skinOf(action.kind) }
     val timeStr = remember(action.createdAt) { formatTime(action.createdAt) }
     var expanded by remember { mutableStateOf(false) }
     val isPending = action.status == "pending"
+    val isInfo = action.status == "info"
 
     Box(
         modifier = Modifier
@@ -331,12 +345,13 @@ private fun ActionCard(
                 Spacer(Modifier.width(8.dp))
                 Text(timeStr, fontFamily = Serif, fontSize = 11.sp, color = InkFaint)
                 Spacer(Modifier.weight(1f))
-                if (!isPending) {
+                if (!isPending && !isInfo) {
                     Text(
                         when (action.status) {
                             "approved" -> "已同意 · 等他发"
                             "executed" -> "已发出"
                             "rejected" -> "你否掉了"
+                            "read" -> "已读"
                             else -> action.status
                         },
                         fontSize = 10.5.sp,
@@ -358,8 +373,8 @@ private fun ActionCard(
                 Text(skin.hint, fontSize = 10.5.sp, color = InkFaint)
             }
 
-            // 他为什么想说这个。这条最该看——知道动机才好判断。
-            if (action.reason.isNotBlank()) {
+            // 他为什么想说这个（对外发言才有意义，活动记录不显示这个，内容已包含在 body 里）
+            if (action.reason.isNotBlank() && !isInfo) {
                 Spacer(Modifier.height(10.dp))
                 Surface(shape = RoundedCornerShape(10.dp), color = ReasonBg) {
                     Column(Modifier.fillMaxWidth().padding(10.dp)) {
@@ -394,6 +409,7 @@ private fun ActionCard(
                 Text(action.result.take(220), fontSize = 10.5.sp, color = InkFaint, lineHeight = 17.sp)
             }
 
+            // 按钮区：pending 显示同意/不发，info 显示"知道了"
             if (isPending) {
                 Spacer(Modifier.height(12.dp))
                 Row(
@@ -406,6 +422,16 @@ private fun ActionCard(
                     Spacer(Modifier.width(4.dp))
                     TextButton(onClick = onApprove) {
                         Text("可以发", fontSize = 13.sp, color = OkGreen, fontWeight = FontWeight.Medium)
+                    }
+                }
+            } else if (isInfo) {
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(onClick = onMarkRead) {
+                        Text("知道了", fontSize = 13.sp, color = InkSub)
                     }
                 }
             }
