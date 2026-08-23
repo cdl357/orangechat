@@ -1,5 +1,6 @@
 /*
  * 橘瓣 OrangeChat - 潮汐：沈聿淮在想什么
+ * 数据源：心潮 xinchao-dynamic-mind（12维驱力 + 念头池 + 梦境）
  */
 package me.rerere.rikkahub.ui.pages.tide
 
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -52,18 +54,23 @@ import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
-private const val MURMUR_BASE = "http://134.175.7.196:8080"
+private const val TIDE_BASE = "http://134.175.7.196:41337/api/tide"
 
-data class DriveState(val key: String, val label: String, val value: Float, val base: Float)
+data class DriveState(val key: String, val label: String, val value: Float)
 data class ArcEntry(val text: String, val time: String, val drive: String, val label: String, val type: String)
+data class DreamEntry(val dream: String, val residue: String, val lucidity: Float, val createdAt: String, val source: String)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TidePage() {
+    var consciousness by remember { mutableStateOf("") }
+    var fatigue by remember { mutableStateOf(0f) }
     var drives by remember { mutableStateOf<List<DriveState>>(emptyList()) }
-    var murmurs by remember { mutableStateOf<List<ArcEntry>>(emptyList()) }
-    var regrets by remember { mutableStateOf<List<ArcEntry>>(emptyList()) }
+    var topIntent by remember { mutableStateOf("") }
+    var dreams by remember { mutableStateOf<List<DreamEntry>>(emptyList()) }
+    var arcs by remember { mutableStateOf<List<ArcEntry>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var selectedTab by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
@@ -73,33 +80,55 @@ fun TidePage() {
             loading = true
             withContext(Dispatchers.IO) {
                 try {
-                    // state
-                    val stateJson = JSONObject(URL("$MURMUR_BASE/api/state").readText())
-                    val drivesObj = stateJson.getJSONObject("drives")
-                    val list = mutableListOf<DriveState>()
-                    val keys = drivesObj.keys()
-                    while (keys.hasNext()) {
-                        val k = keys.next()
-                        val d = drivesObj.getJSONObject(k)
-                        list.add(DriveState(k, d.getString("z"), d.getDouble("v").toFloat(), d.getDouble("b").toFloat()))
+                    // 心潮状态
+                    val stateJson = JSONObject(URL("$TIDE_BASE/state").readText())
+                    consciousness = stateJson.optString("consciousness", "unknown")
+                    fatigue = stateJson.optDouble("fatigue", 0.0).toFloat()
+                    topIntent = stateJson.optJSONObject("topIntent")?.optString("label", "") ?: ""
+
+                    // 12维驱力
+                    val drivesArr = stateJson.optJSONArray("drives") ?: JSONArray()
+                    val dList = mutableListOf<DriveState>()
+                    for (i in 0 until drivesArr.length()) {
+                        val d = drivesArr.getJSONObject(i)
+                        dList.add(DriveState(
+                            d.getString("key"),
+                            d.getString("label"),
+                            d.getDouble("value").toFloat()
+                        ))
                     }
-                    drives = list.sortedByDescending { it.value }
-                    // murmur arcs
-                    val murmurArr = JSONArray(URL("$MURMUR_BASE/api/arc?type=murmur").readText())
-                    val mList = mutableListOf<ArcEntry>()
-                    for (i in 0 until murmurArr.length()) {
-                        val e = murmurArr.getJSONObject(i)
-                        mList.add(ArcEntry(e.getString("text"), e.getString("time"), e.optString("drive",""), e.optString("zh",""), e.optString("type","murmur")))
+                    drives = dList
+
+                    // 梦境
+                    val dreamsArr = stateJson.optJSONArray("recentDreams") ?: JSONArray()
+                    val dmList = mutableListOf<DreamEntry>()
+                    for (i in 0 until dreamsArr.length()) {
+                        val d = dreamsArr.getJSONObject(i)
+                        dmList.add(DreamEntry(
+                            d.optString("dream", ""),
+                            d.optString("residue", ""),
+                            d.optDouble("lucidity", 0.0).toFloat(),
+                            d.optString("createdAt", ""),
+                            d.optString("source", "")
+                        ))
                     }
-                    murmurs = mList.reversed()
-                    // regret arcs
-                    val regretArr = JSONArray(URL("$MURMUR_BASE/api/arc?type=regret").readText())
-                    val rList = mutableListOf<ArcEntry>()
-                    for (i in 0 until regretArr.length()) {
-                        val e = regretArr.getJSONObject(i)
-                        rList.add(ArcEntry(e.getString("text"), e.getString("time"), e.optString("drive",""), e.optString("zh",""), e.optString("type","regret")))
+                    dreams = dmList.reversed()
+
+                    // 独白档案
+                    val arcJson = JSONObject(URL("$TIDE_BASE/arc").readText())
+                    val arcArr = arcJson.optJSONArray("items") ?: JSONArray()
+                    val aList = mutableListOf<ArcEntry>()
+                    for (i in 0 until arcArr.length()) {
+                        val e = arcArr.getJSONObject(i)
+                        aList.add(ArcEntry(
+                            e.optString("text", ""),
+                            e.optString("time", ""),
+                            e.optString("drive", ""),
+                            e.optString("zh", e.optString("drive", "")),
+                            e.optString("type", "murmur")
+                        ))
                     }
-                    regrets = rList.reversed()
+                    arcs = aList
                 } catch (e: Exception) {
                     android.util.Log.e("TidePage", "load failed", e)
                 }
@@ -130,52 +159,109 @@ fun TidePage() {
             return@Scaffold
         }
 
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            // 情绪条
-            if (drives.isNotEmpty()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            // 意识状态卡片
+            item {
                 Surface(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
                 ) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        val strongest = drives.maxByOrNull { it.value }
+                    Column(Modifier.padding(16.dp)) {
+                        val consciousnessText = when (consciousness) {
+                            "sleeping" -> "\uD83D\uDCA4 沉睡中"
+                            "settling" -> "\uD83C\uDF19 正在入睡"
+                            "waking" -> "☀\uFE0F 醒来了"
+                            "active" -> "✨ 活跃"
+                            else -> "\uD83D\uDD2E $consciousness"
+                        }
                         Text(
-                            text = "当前最强：${strongest?.label ?: ""} ${String.format("%.2f", strongest?.value ?: 0f)}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
+                            text = consciousnessText,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
                         )
-                        drives.forEach { drive ->
-                            DriveRow(drive)
+                        Spacer(Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Text(
+                                text = "疲惫度 ${String.format("%.0f", fatigue * 100)}%",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            if (topIntent.isNotBlank()) {
+                                Text(
+                                    text = "主驱力：$topIntent",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
                         }
                     }
                 }
             }
 
-            // tabs
-            TabRow(selectedTabIndex = selectedTab) {
-                Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("独白档案 (${murmurs.size})") })
-                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("检讨书 (${regrets.size})") })
-            }
-
-            val displayList = if (selectedTab == 0) murmurs else regrets
-
-            if (displayList.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("还没有记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    item { Spacer(Modifier.height(8.dp)) }
-                    items(displayList, key = { it.time + it.text.take(10) }) { arc ->
-                        ArcCard(arc)
+            // 12 维驱力条
+            if (drives.isNotEmpty()) {
+                item {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    ) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                "十二维驱力",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Medium,
+                            )
+                            drives.forEach { drive ->
+                                DriveRow(drive)
+                            }
+                        }
                     }
-                    item { Spacer(Modifier.height(16.dp)) }
                 }
             }
+
+            // Tabs: 梦境 / 独白
+            item {
+                TabRow(selectedTabIndex = selectedTab) {
+                    Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("梦境 (${dreams.size})") })
+                    Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("独白 (${arcs.size})") })
+                }
+            }
+
+            when (selectedTab) {
+                0 -> {
+                    if (dreams.isEmpty()) {
+                        item {
+                            Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
+                                Text("还没有梦境记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    } else {
+                        items(dreams, key = { it.createdAt }) { dream ->
+                            DreamCard(dream)
+                        }
+                    }
+                }
+                1 -> {
+                    if (arcs.isEmpty()) {
+                        item {
+                            Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
+                                Text("还没有独白记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    } else {
+                        items(arcs, key = { it.time + it.text.take(10) }) { arc ->
+                            ArcCard(arc)
+                        }
+                    }
+                }
+            }
+
+            item { Spacer(Modifier.height(16.dp)) }
         }
     }
 }
@@ -194,7 +280,7 @@ private fun DriveRow(drive: DriveState) {
         Text(
             text = drive.label,
             style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.width(36.dp),
+            modifier = Modifier.width(52.dp),
             maxLines = 1,
         )
         Spacer(Modifier.width(8.dp))
@@ -205,11 +291,55 @@ private fun DriveRow(drive: DriveState) {
         )
         Spacer(Modifier.width(8.dp))
         Text(
-            text = String.format("%.2f", drive.value),
+            text = String.format("%.0f%%", drive.value * 100),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.width(36.dp),
+            modifier = Modifier.width(38.dp),
         )
+    }
+}
+
+@Composable
+private fun DreamCard(dream: DreamEntry) {
+    val timeStr = remember(dream.createdAt) {
+        try {
+            val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.CHINA)
+            fmt.timeZone = TimeZone.getTimeZone("UTC")
+            val raw = dream.createdAt.substringBefore(".").substringBefore("Z")
+            val d = fmt.parse(raw) ?: Date()
+            val local = SimpleDateFormat("MM/dd HH:mm", Locale.CHINA)
+            local.timeZone = TimeZone.getDefault()
+            local.format(d)
+        } catch (e: Exception) { dream.createdAt.take(16) }
+    }
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.25f),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text(dream.dream, style = MaterialTheme.typography.bodyMedium)
+            if (dream.residue.isNotBlank()) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "余韵：${dream.residue}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(timeStr, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "清醒度 ${String.format("%.0f%%", dream.lucidity * 100)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+                if (dream.source == "model") {
+                    Text("· AI梦", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
     }
 }
 
@@ -225,7 +355,7 @@ private fun ArcCard(arc: ArcEntry) {
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
     ) {
         Column(Modifier.padding(14.dp)) {
             Text(arc.text, style = MaterialTheme.typography.bodyMedium)
@@ -234,6 +364,9 @@ private fun ArcCard(arc: ArcEntry) {
                 Text(timeStr, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (arc.label.isNotBlank()) {
                     Text("· ${arc.label}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                }
+                if (arc.type == "regret") {
+                    Text("· 检讨", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                 }
             }
         }
