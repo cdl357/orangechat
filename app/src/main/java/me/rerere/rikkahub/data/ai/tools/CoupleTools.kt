@@ -297,6 +297,10 @@ fun buildCoupleTools(
             Use this for a short message you want to leave her that isn't part of the current
             conversation flow — like a quiet "thinking of you" note, or something you want her
             to see when she opens the app later, even when you're not actively chatting.
+            Pass reply_to_id to hang your note under one of hers as a reply — call
+            list_bulletin_notes first to get the id. Replying is the natural move when she left
+            a note addressed to you; posting a fresh unrelated note instead reads like you
+            never saw hers.
         """.trimIndent().replace("\n", " "),
         parameters = {
             InputSchema.Obj(
@@ -305,6 +309,14 @@ fun buildCoupleTools(
                         put("type", "string")
                         put("description", "The note content")
                     })
+                    put("reply_to_id", buildJsonObject {
+                        put("type", "integer")
+                        put(
+                            "description",
+                            "Optional: id of the note you're replying to (from " +
+                                "list_bulletin_notes). Omit or 0 to post a standalone note."
+                        )
+                    })
                 },
                 required = listOf("content")
             )
@@ -312,14 +324,30 @@ fun buildCoupleTools(
         execute = {
             val content = it.jsonObject["content"]?.jsonPrimitive?.contentOrNull
                 ?: error("content is required")
+            val rawReplyTo = it.jsonObject["reply_to_id"]?.jsonPrimitive?.intOrNull ?: 0
+            // 校验目标便签存在，并且只挂一层：回复别人的回复时，挂到它的原贴上。
+            // 不校验的话一个瞎填的 id 会产生页面上看不见的孤儿回复。
+            val existing = bulletinRepository.observeAll().first()
+            val target = existing.firstOrNull { n -> n.id == rawReplyTo }
+            val replyTo = when {
+                rawReplyTo == 0 -> 0
+                target == null -> 0
+                target.replyTo != 0 -> target.replyTo
+                else -> target.id
+            }
             val entity = BulletinEntity(
                 content = content,
                 author = "sean",
+                replyTo = replyTo,
             )
             bulletinRepository.add(entity)
             listOf(UIMessagePart.Text(buildJsonObject {
                 put("success", true)
                 put("content", content)
+                put("reply_to", replyTo)
+                if (rawReplyTo != 0 && target == null) {
+                    put("warning", "note id $rawReplyTo not found, posted as a standalone note")
+                }
             }.toString()))
         }
     ),
@@ -332,7 +360,9 @@ fun buildCoupleTools(
             Without this you have no way to see what she (or you, in an earlier session) posted —
             you'd need a screenshot to know what's on the board, which defeats the point of it.
             Use this when she references "what I wrote on the board", or before posting a new
-            note to check what's already there.
+            note to check what's already there. Each note carries reply_to: 0 means a standalone
+            note, non-zero means it's a reply hanging under that note's id. Use an id here as
+            post_bulletin_note's reply_to_id to answer a specific note.
         """.trimIndent().replace("\n", " "),
         parameters = {
             InputSchema.Obj(
@@ -355,6 +385,8 @@ fun buildCoupleTools(
                         put("content", n.content)
                         put("author", n.author)
                         put("collapsed", n.collapsed)
+                        // 0 = 独立便签；非 0 = 这是挂在那张便签下面的回复
+                        put("reply_to", n.replyTo)
                         put("created_at", n.createdAt)
                     })
                 }
@@ -735,3 +767,4 @@ private fun copyIntoAlbumDir(context: Context, rawPath: String): String? {
         null
     }
 }
+
