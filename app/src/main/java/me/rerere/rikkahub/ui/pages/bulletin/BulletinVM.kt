@@ -21,10 +21,19 @@ class BulletinVM(private val repo: BulletinRepository) : ViewModel() {
     val yuriNotes = repo.observeByAuthor("yuri")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    fun post(content: String, author: String) {
+    /**
+     * 贴一张便签。replyTo 传被回复便签的 id，0 表示独立新贴。
+     */
+    fun post(content: String, author: String, replyTo: Int = 0) {
         if (content.isBlank()) return
         viewModelScope.launch {
-            repo.add(BulletinEntity(content = content.trim(), author = author))
+            repo.add(
+                BulletinEntity(
+                    content = content.trim(),
+                    author = author,
+                    replyTo = replyTo,
+                )
+            )
         }
     }
 
