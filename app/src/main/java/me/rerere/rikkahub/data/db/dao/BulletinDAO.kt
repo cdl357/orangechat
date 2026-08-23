@@ -28,6 +28,10 @@ interface BulletinDAO {
     @Query("DELETE FROM bulletin_note WHERE id = :id")
     suspend fun deleteById(id: Int)
 
+    /** 删掉挂在某张便签下面的所有回复（删原贴时连带清理，避免留下孤儿回复） */
+    @Query("DELETE FROM bulletin_note WHERE reply_to = :parentId")
+    suspend fun deleteRepliesOf(parentId: Int)
+
     @Query("SELECT * FROM bulletin_note WHERE author = :author ORDER BY created_at DESC")
     fun observeByAuthor(author: String): Flow<List<BulletinEntity>>
 
