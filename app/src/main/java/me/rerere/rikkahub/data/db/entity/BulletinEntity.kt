@@ -30,6 +30,13 @@ data class BulletinEntity(
     @ColumnInfo("collapsed")
     val collapsed: Boolean = false,
 
+    /**
+     * 回复目标便签的 id。0 = 这是一张独立便签（原贴）。
+     * 回复只挂一层：回复的回复也挂在同一个原贴下面，不做无限嵌套。
+     */
+    @ColumnInfo("reply_to")
+    val replyTo: Int = 0,
+
     /** 创建时间戳 */
     @ColumnInfo("created_at")
     val createdAt: Long = System.currentTimeMillis(),
