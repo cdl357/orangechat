@@ -46,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -68,6 +69,7 @@ private val WoodBarEnd = Color(0xFFA08060)
 private val InkMain = Color(0xFF3A3A2A)
 private val InkSub = Color(0xFFA09080)
 private val TapeColor = Color(0xB3FFFAF0)
+private val ThreadLine = Color(0x33A09080)
 
 private val noteColors = listOf(
     listOf(Color(0xFFFFE8E8), Color(0xFFFFD8D8)),   // pink
@@ -77,16 +79,41 @@ private val noteColors = listOf(
     listOf(Color(0xFFF3E5F5), Color(0xFFE8D8F0)),   // purple
 )
 
+/** 一串：原贴 + 挂在它下面的回复（按时间正序，先回的在上） */
+private data class NoteThread(
+    val root: BulletinEntity,
+    val replies: List<BulletinEntity>,
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BulletinPage(vm: BulletinVM = koinViewModel()) {
     val seanNotes by vm.seanNotes.collectAsStateWithLifecycle()
     val yuriNotes by vm.yuriNotes.collectAsStateWithLifecycle()
     var showAddDialog by remember { mutableStateOf(false) }
+    // 不为 null 时表示正在回复这张便签
+    var replyTarget by remember { mutableStateOf<BulletinEntity?>(null) }
 
-    // 双方留言合并显示，最新的在最上面
     val allNotes = remember(seanNotes, yuriNotes) {
         (seanNotes + yuriNotes).sortedByDescending { it.createdAt }
+    }
+
+    // 组装成"串"：原贴在上，回复挂下面。
+    // reply_to 指向已被删掉的便签时（孤儿回复），当成独立原贴显示，
+    // 不然它会从页面上凭空消失，看起来像留言丢了。
+    val threads = remember(allNotes) {
+        val idSet = allNotes.map { it.id }.toSet()
+        val repliesByParent = allNotes
+            .filter { it.replyTo != 0 && it.replyTo in idSet }
+            .groupBy { it.replyTo }
+        allNotes
+            .filter { it.replyTo == 0 || it.replyTo !in idSet }
+            .map { root ->
+                NoteThread(
+                    root = root,
+                    replies = repliesByParent[root.id]?.sortedBy { it.createdAt } ?: emptyList(),
+                )
+            }
     }
 
     Scaffold(
@@ -140,11 +167,13 @@ fun BulletinPage(vm: BulletinVM = koinViewModel()) {
                 }
             } else {
                 Column(modifier = Modifier.fillMaxSize()) {
+                    val replyCount = allNotes.size - threads.size
                     Text(
-                        "${allNotes.size} 张便签 · Sean ${seanNotes.size} 张 / Yuri ${yuriNotes.size} 张",
+                        "${allNotes.size} 张便签 · Sean ${seanNotes.size} 张 / Yuri ${yuriNotes.size} 张" +
+                            if (replyCount > 0) " · 其中 $replyCount 条回复" else "",
                         fontSize = 12.sp,
                         color = InkSub,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
                     )
                     LazyVerticalStaggeredGrid(
@@ -154,8 +183,12 @@ fun BulletinPage(vm: BulletinVM = koinViewModel()) {
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         contentPadding = PaddingValues(bottom = 100.dp),
                     ) {
-                        items(allNotes, key = { it.id }) { note ->
-                            StickyNote(note = note, onDelete = { vm.delete(note) })
+                        items(threads, key = { it.root.id }) { thread ->
+                            NoteThreadColumn(
+                                thread = thread,
+                                onDelete = { vm.delete(it) },
+                                onReply = { replyTarget = it },
+                            )
                         }
                     }
                 }
@@ -164,7 +197,8 @@ fun BulletinPage(vm: BulletinVM = koinViewModel()) {
     }
 
     if (showAddDialog) {
-        AddBulletinDialog(
+        BulletinComposeDialog(
+            replyTo = null,
             onDismiss = { showAddDialog = false },
             onConfirm = { content, author ->
                 vm.post(content, author)
@@ -172,12 +206,71 @@ fun BulletinPage(vm: BulletinVM = koinViewModel()) {
             }
         )
     }
+
+    replyTarget?.let { target ->
+        BulletinComposeDialog(
+            replyTo = target,
+            onDismiss = { replyTarget = null },
+            onConfirm = { content, author ->
+                // 回复的回复也挂在同一个原贴下面，只做一层，不无限嵌套
+                val parentId = if (target.replyTo != 0) target.replyTo else target.id
+                vm.post(content, author, replyTo = parentId)
+                replyTarget = null
+            }
+        )
+    }
+}
+
+/** 一整串（原贴 + 回复）占瀑布流里的一格，这样两列布局不会把一串拆散 */
+@Composable
+private fun NoteThreadColumn(
+    thread: NoteThread,
+    onDelete: (BulletinEntity) -> Unit,
+    onReply: (BulletinEntity) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        StickyNote(
+            note = thread.root,
+            isReply = false,
+            onDelete = { onDelete(thread.root) },
+            onReply = { onReply(thread.root) },
+        )
+        thread.replies.forEach { reply ->
+            Box(modifier = Modifier.fillMaxWidth()) {
+                // 左侧一条竖线，视觉上把回复串起来
+                Box(
+                    modifier = Modifier
+                        .padding(start = 8.dp)
+                        .width(1.dp)
+                        .height(28.dp)
+                        .background(ThreadLine)
+                )
+            }
+            Box(modifier = Modifier.padding(start = 14.dp)) {
+                StickyNote(
+                    note = reply,
+                    isReply = true,
+                    onDelete = { onDelete(reply) },
+                    onReply = { onReply(reply) },
+                )
+            }
+        }
+    }
 }
 
 @Composable
-private fun StickyNote(note: BulletinEntity, onDelete: () -> Unit) {
+private fun StickyNote(
+    note: BulletinEntity,
+    isReply: Boolean,
+    onDelete: () -> Unit,
+    onReply: () -> Unit,
+) {
     val colorIdx = remember(note.id) { Random(note.id).nextInt(noteColors.size) }
-    val rotation = remember(note.id) { Random(note.id + 100).nextInt(-3, 4).toFloat() }
+    // 回复的便签摆得更正一点，视觉上从属于上面那张
+    val rotation = remember(note.id, isReply) {
+        if (isReply) Random(note.id + 100).nextInt(-1, 2).toFloat()
+        else Random(note.id + 100).nextInt(-3, 4).toFloat()
+    }
     val colors = noteColors[colorIdx]
     // 完整年月日时间，避免"今天"这种相对时间造成误解
     val timeStr = remember(note.createdAt) {
@@ -191,16 +284,18 @@ private fun StickyNote(note: BulletinEntity, onDelete: () -> Unit) {
             .fillMaxWidth()
             .rotate(rotation)
     ) {
-        // 胶带
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .offset(y = (-8).dp)
-                .width(40.dp)
-                .height(14.dp)
-                .rotate(-2f)
-                .background(TapeColor, RoundedCornerShape(1.dp))
-        )
+        // 胶带（回复不贴胶带，它是挂在上面那张下面的）
+        if (!isReply) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .offset(y = (-8).dp)
+                    .width(40.dp)
+                    .height(14.dp)
+                    .rotate(-2f)
+                    .background(TapeColor, RoundedCornerShape(1.dp))
+            )
+        }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -208,24 +303,44 @@ private fun StickyNote(note: BulletinEntity, onDelete: () -> Unit) {
                     Brush.linearGradient(colors),
                     RoundedCornerShape(1.dp)
                 )
-                .padding(12.dp, 16.dp, 12.dp, 10.dp)
+                .padding(
+                    start = 12.dp,
+                    top = if (isReply) 10.dp else 16.dp,
+                    end = 12.dp,
+                    bottom = 10.dp,
+                )
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("$emoji $fromLabel", fontSize = 10.sp, color = InkSub)
-                androidx.compose.material3.IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier.size(16.dp),
+                Text(
+                    if (isReply) "↳ $emoji $fromLabel" else "$emoji $fromLabel",
+                    fontSize = 10.sp,
+                    color = InkSub,
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    Icon(
-                        HugeIcons.Delete01,
-                        contentDescription = "删除",
-                        modifier = Modifier.size(11.dp),
-                        tint = InkSub,
-                    )
+                    androidx.compose.material3.IconButton(
+                        onClick = onReply,
+                        modifier = Modifier.size(16.dp),
+                    ) {
+                        Text("↩", fontSize = 11.sp, color = InkSub)
+                    }
+                    androidx.compose.material3.IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(16.dp),
+                    ) {
+                        Icon(
+                            HugeIcons.Delete01,
+                            contentDescription = "删除",
+                            modifier = Modifier.size(11.dp),
+                            tint = InkSub,
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -241,30 +356,62 @@ private fun StickyNote(note: BulletinEntity, onDelete: () -> Unit) {
                 fontSize = 9.sp,
                 color = InkSub,
                 modifier = Modifier.fillMaxWidth(),
-                textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                textAlign = TextAlign.End,
             )
         }
     }
 }
 
+/**
+ * 贴便签 / 回复便签共用一个对话框。
+ * replyTo 非空时顶部显示被回复的原文，标题变成"回复"。
+ */
 @Composable
-private fun AddBulletinDialog(
+private fun BulletinComposeDialog(
+    replyTo: BulletinEntity?,
     onDismiss: () -> Unit,
     onConfirm: (content: String, author: String) -> Unit,
 ) {
     var content by remember { mutableStateOf("") }
-    var author by remember { mutableStateOf("yuri") }
+    // 回复时默认署名切到"另一个人"，省一次手动点
+    var author by remember {
+        mutableStateOf(
+            if (replyTo != null && replyTo.author == "yuri") "sean" else "yuri"
+        )
+    }
+    var submitted by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Color.White,
-        title = { Text("贴一张便签") },
+        title = { Text(if (replyTo != null) "回复这张便签" else "贴一张便签") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (replyTo != null) {
+                    Surface(
+                        color = Color(0xFFF3F1EC),
+                        shape = RoundedCornerShape(6.dp),
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                if (replyTo.author == "sean") "Sean 说" else "Yuri 说",
+                                fontSize = 10.sp,
+                                color = InkSub,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                replyTo.content,
+                                fontSize = 12.sp,
+                                color = InkMain,
+                                lineHeight = 17.sp,
+                            )
+                        }
+                    }
+                }
                 OutlinedTextField(
                     value = content,
                     onValueChange = { content = it },
-                    label = { Text("说点什么...") },
+                    label = { Text(if (replyTo != null) "回他/她一句..." else "说点什么...") },
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 3,
                 )
@@ -291,8 +438,17 @@ private fun AddBulletinDialog(
             }
         },
         confirmButton = {
-            FilledTonalButton(onClick = { onConfirm(content, author) }, enabled = content.isNotBlank()) {
-                Text("贴上去")
+            FilledTonalButton(
+                // 先上锁再回调，防连点插两条一样的（表情包那边踩过这个坑）
+                onClick = {
+                    if (!submitted) {
+                        submitted = true
+                        onConfirm(content, author)
+                    }
+                },
+                enabled = content.isNotBlank() && !submitted,
+            ) {
+                Text(if (replyTo != null) "回复" else "贴上去")
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
