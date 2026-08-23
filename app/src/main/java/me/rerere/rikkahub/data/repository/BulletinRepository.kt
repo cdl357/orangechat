@@ -13,6 +13,17 @@ class BulletinRepository(private val dao: BulletinDAO) {
     fun observeByAuthor(author: String): Flow<List<BulletinEntity>> = dao.observeByAuthor(author)
     fun observeAll(): Flow<List<BulletinEntity>> = dao.observeAll()
     suspend fun add(item: BulletinEntity) = dao.insert(item)
-    suspend fun delete(item: BulletinEntity) = dao.delete(item)
+
+    /**
+     * 删便签。如果删的是原贴，挂在它下面的回复一起删掉，
+     * 否则那些回复会变成指向不存在的 id 的孤儿（页面上就消失了但还占着库）。
+     */
+    suspend fun delete(item: BulletinEntity) {
+        if (item.replyTo == 0) {
+            dao.deleteRepliesOf(item.id)
+        }
+        dao.delete(item)
+    }
+
     suspend fun setCollapsed(id: Int, collapsed: Boolean) = dao.setCollapsed(id, collapsed)
 }
