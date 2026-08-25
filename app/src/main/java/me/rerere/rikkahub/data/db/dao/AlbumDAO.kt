@@ -34,4 +34,20 @@ interface AlbumDAO {
      */
     @Query("UPDATE album_item SET caption = :caption WHERE id = :id")
     suspend fun updateCaption(id: Int, caption: String)
+
+    /**
+     * 给已经存过的照片补写描述和第一印象。
+     *
+     * 传空串表示"这个字段不改"，所以用 CASE 判断而不是无条件覆盖 ——
+     * 只想补 impression 的时候不该把之前写好的 photo_desc 清掉。
+     */
+    @Query(
+        """
+        UPDATE album_item SET
+            photo_desc = CASE WHEN :photoDesc = '' THEN photo_desc ELSE :photoDesc END,
+            impression = CASE WHEN :impression = '' THEN impression ELSE :impression END
+        WHERE id = :id
+        """
+    )
+    suspend fun updateNote(id: Int, photoDesc: String, impression: String)
 }
