@@ -27,6 +27,24 @@ data class AlbumEntity(
     @ColumnInfo("caption")
     val caption: String = "",
 
+    /**
+     * 画面的客观描述，详细到下次不看图也知道是哪张。
+     *
+     * 列名叫 photo_desc 而不是 desc —— desc 是 SQL 保留字（ORDER BY ... DESC），
+     * 拿来当列名会在某些查询里炸。
+     */
+    @ColumnInfo("photo_desc", defaultValue = "")
+    val photoDesc: String = "",
+
+    /**
+     * 第一次看到这张照片时心里那句话。
+     *
+     * 这个字段的意义在于"谁写的"：自动生成的是识图报告，自己写的才是记忆。
+     * 下次她再发同一张，递回来的是这句话，不是一份图片分析。
+     */
+    @ColumnInfo("impression", defaultValue = "")
+    val impression: String = "",
+
     /** 保存者: "sean" 或 "yuri" */
     @ColumnInfo("saved_by")
     val savedBy: String = "sean",
