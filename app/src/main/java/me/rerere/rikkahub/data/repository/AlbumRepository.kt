@@ -24,6 +24,10 @@ class AlbumRepository(
     suspend fun deleteById(id: Int) = dao.deleteById(id)
     suspend fun updateCaption(id: Int, caption: String) = dao.updateCaption(id, caption)
 
+    /** 给已存过的照片补写画面描述和第一印象。空串表示该字段不改。 */
+    suspend fun updateNote(id: Int, photoDesc: String, impression: String) =
+        dao.updateNote(id, photoDesc, impression)
+
     /**
      * 从 URL 保存图片到相册（支持 file:// 和 http(s):// ）
      * @param url 图片地址（file:// 本地路径 或 http(s):// 网络图片）
