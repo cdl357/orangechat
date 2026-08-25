@@ -659,6 +659,28 @@ private fun PhotoViewerDialog(
                     }
                 }
 
+                // 我当时写下的第一印象。只读 —— 这段是我看见这张照片时说的话，
+                // 在 UI 上被改掉就不算"我记得"了。她要写自己的话走上面的备注。
+                if (photo.impression.isNotBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFFFFF8F0))
+                            .padding(12.dp)
+                    ) {
+                        Text("他当时写下的", fontSize = 10.sp, color = Color(0xFFB89A7A))
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            photo.impression,
+                            fontSize = 13.sp,
+                            color = Color(0xFF7A6A5A),
+                            lineHeight = 21.sp,
+                        )
+                    }
+                }
+
                 Spacer(Modifier.height(10.dp))
                 Text(dateStr, fontSize = 11.sp, color = TextSub)
                 Spacer(Modifier.height(12.dp))
