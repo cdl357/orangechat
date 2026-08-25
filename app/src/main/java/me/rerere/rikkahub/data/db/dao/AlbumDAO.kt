@@ -12,6 +12,9 @@ interface AlbumDAO {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(item: AlbumEntity): Long
 
+    @Update
+    suspend fun update(item: AlbumEntity)
+
     @Delete
     suspend fun delete(item: AlbumEntity)
 
@@ -26,6 +29,17 @@ interface AlbumDAO {
 
     @Query("SELECT * FROM album_item WHERE folder_id = :folderId ORDER BY created_at DESC")
     fun observeByFolder(folderId: Int): Flow<List<AlbumEntity>>
+
+    /** 一次性取全部（迁移/回填用，不要 Flow） */
+    @Query("SELECT * FROM album_item ORDER BY created_at DESC")
+    suspend fun getAllOnce(): List<AlbumEntity>
+
+    /**
+     * 按内容哈希找照片。这是去重的入口。
+     * 空哈希不查（老数据还没回填，全都是空串，会误命中一大片）。
+     */
+    @Query("SELECT * FROM album_item WHERE content_hash = :hash AND content_hash != '' LIMIT 1")
+    suspend fun findByHash(hash: String): AlbumEntity?
 
     /**
      * 只改备注，不动别的字段。
@@ -50,4 +64,16 @@ interface AlbumDAO {
         """
     )
     suspend fun updateNote(id: Int, photoDesc: String, impression: String)
+
+    /** 上传成功后写回公网地址 */
+    @Query("UPDATE album_item SET remote_url = :remoteUrl WHERE id = :id")
+    suspend fun updateRemoteUrl(id: Int, remoteUrl: String)
+
+    /** 回填哈希（老照片一次性补算） */
+    @Query("UPDATE album_item SET content_hash = :hash WHERE id = :id")
+    suspend fun updateHash(id: Int, hash: String)
+
+    /** 又见到这张了：次数 +1，时间戳更新 */
+    @Query("UPDATE album_item SET seen = seen + 1, last_seen = :now WHERE id = :id")
+    suspend fun touchSeen(id: Int, now: Long)
 }

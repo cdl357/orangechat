@@ -70,6 +70,7 @@ import me.rerere.hugeicons.stroke.PlusSign
 import me.rerere.rikkahub.data.db.entity.AlbumEntity
 import me.rerere.rikkahub.data.db.entity.AlbumFolderEntity
 import me.rerere.rikkahub.ui.components.nav.BackButton
+import androidx.compose.runtime.LaunchedEffect
 import org.koin.androidx.compose.koinViewModel
 import java.io.File
 import java.io.FileOutputStream
@@ -96,6 +97,11 @@ private val TimelineDot = Color(0xFF7AB4C4)
 @Composable
 fun AlbumPage(vm: AlbumVM = koinViewModel()) {
     val items by vm.allItems.collectAsStateWithLifecycle()
+
+    // 进页面补一次：把还没上云的照片传上去，顺便给老照片补算内容哈希。
+    // 放在 ViewModel 的作用域里跑，页面退出也不会被掐断（表情包那边用
+    // rememberCoroutineScope 被取消过，文件写一半，这次不重复那个坑）。
+    LaunchedEffect(Unit) { vm.syncToCloud() }
     val folders by vm.allFolders.collectAsStateWithLifecycle()
     var showCreateDialog by remember { mutableStateOf(false) }
     var openedFolder by remember { mutableStateOf<AlbumFolderEntity?>(null) }
@@ -228,10 +234,12 @@ private fun FolderRow(
                     }
                 } else {
                     val photo = previewPhotos.first()
-                    val file = remember(photo.filePath) { File(photo.filePath) }
-                    if (photo.filePath.isNotBlank() && file.exists()) {
+                    // 优先云端地址：本地文件可能已经没了（换手机/清数据），
+                    // 云端还在就照样显示得出来。
+                    val imageModel = rememberAlbumImageModel(photo.filePath, photo.remoteUrl)
+                    if (imageModel != null) {
                         AsyncImage(
-                            model = ImageRequest.Builder(LocalContext.current).data(file).build(),
+                            model = ImageRequest.Builder(LocalContext.current).data(imageModel).build(),
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)),
@@ -553,10 +561,10 @@ private fun PolaroidCard(photo: AlbumEntity, onClick: () -> Unit) {
                 ,
             contentAlignment = Alignment.Center,
         ) {
-            val file = remember(photo.filePath) { File(photo.filePath) }
-            if (photo.filePath.isNotBlank() && file.exists()) {
+            val imageModel = rememberAlbumImageModel(photo.filePath, photo.remoteUrl)
+            if (imageModel != null) {
                 AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current).data(file).build(),
+                    model = ImageRequest.Builder(LocalContext.current).data(imageModel).build(),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
@@ -620,10 +628,10 @@ private fun PhotoViewerDialog(
                     .heightIn(max = 620.dp)
                     .verticalScroll(rememberScrollState())
             ) {
-                val file = remember(photo.filePath) { File(photo.filePath) }
-                if (photo.filePath.isNotBlank() && file.exists()) {
+                val imageModel = rememberAlbumImageModel(photo.filePath, photo.remoteUrl)
+                if (imageModel != null) {
                     AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current).data(file).build(),
+                        model = ImageRequest.Builder(LocalContext.current).data(imageModel).build(),
                         contentDescription = null,
                         contentScale = ContentScale.Fit,
                         modifier = Modifier.fillMaxWidth().height(300.dp).clip(RoundedCornerShape(10.dp)),
@@ -729,3 +737,20 @@ private fun saveImageToPrivate(context: android.content.Context, uri: android.ne
         ""
     }
 }
+
+
+/**
+ * 决定这张照片用什么加载：云端 URL 还是本地文件。
+ *
+ * 云端优先。本地文件在换手机、清数据、系统清缓存之后可能就没了，
+ * 但只要传上去过，云端那份一直在。
+ * 两个都没有返回 null，调用方走占位图分支。
+ */
+@Composable
+private fun rememberAlbumImageModel(filePath: String, remoteUrl: String): Any? =
+    remember(filePath, remoteUrl) {
+        if (remoteUrl.isNotBlank()) return@remember remoteUrl
+        if (filePath.isBlank()) return@remember null
+        val f = File(filePath)
+        if (f.exists() && f.length() > 0L) f else null
+    }

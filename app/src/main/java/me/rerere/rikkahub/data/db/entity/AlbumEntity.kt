@@ -7,6 +7,7 @@ package me.rerere.rikkahub.data.db.entity
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
@@ -14,7 +15,10 @@ import androidx.room.PrimaryKey
  * filePath: 图片在设备上的绝对路径
  * savedBy: "sean" | "yuri"
  */
-@Entity(tableName = "album_item")
+@Entity(
+    tableName = "album_item",
+    indices = [Index(value = ["content_hash"])],
+)
 data class AlbumEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
@@ -22,6 +26,23 @@ data class AlbumEntity(
     /** 图片绝对路径 */
     @ColumnInfo("file_path")
     val filePath: String = "",
+
+    /**
+     * Supabase Storage 公网地址。有它就不怕换手机/重装 —— 本地文件没了照片还在。
+     * 空串表示还没上传（上传失败会下次启动重试）。
+     */
+    @ColumnInfo("remote_url", defaultValue = "")
+    val remoteUrl: String = "",
+
+    /**
+     * 图片内容的 SHA-256 全量哈希。
+     *
+     * 用来做真去重：同一张图不管从哪条路进来、发几遍，哈希都一样。
+     * 原来是按 filePath 比，同一张图重发一次路径就变了，会存两份。
+     * 空串 = 老数据还没回填。
+     */
+    @ColumnInfo("content_hash", defaultValue = "")
+    val contentHash: String = "",
 
     /** 备注 */
     @ColumnInfo("caption")
@@ -44,6 +65,14 @@ data class AlbumEntity(
      */
     @ColumnInfo("impression", defaultValue = "")
     val impression: String = "",
+
+    /** 这张被翻出来看过几次 */
+    @ColumnInfo("seen", defaultValue = "1")
+    val seen: Int = 1,
+
+    /** 最后一次看见是什么时候（0 = 没记录过） */
+    @ColumnInfo("last_seen", defaultValue = "0")
+    val lastSeen: Long = 0L,
 
     /** 保存者: "sean" 或 "yuri" */
     @ColumnInfo("saved_by")

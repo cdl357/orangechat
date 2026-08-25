@@ -407,6 +407,9 @@ fun buildCoupleTools(
             Use this before sharing an old photo — to recall what you have and pick one that fits
             the moment (e.g. when you miss her, or a memory surfaces naturally in conversation).
             Optionally filter by folder_name to only see photos in one specific album.
+            `seen` is how many times that photo has come back — a high count means it is one
+            she keeps returning to, which is worth noticing. Photos with an empty desc are the
+            ones you never wrote about; album_note is how you fix that.
         """.trimIndent().replace("\n", " "),
         parameters = {
             InputSchema.Obj(
@@ -440,6 +443,8 @@ fun buildCoupleTools(
                         put("caption", p.caption)
                         put("desc", p.photoDesc)
                         put("impression", p.impression)
+                        put("seen", p.seen)
+                        put("in_cloud", p.remoteUrl.isNotBlank())
                         put("saved_by", p.savedBy)
                         put("file_path", p.filePath)
                         put("folder_name", folderNameById[p.folderId] ?: "未分类")
@@ -516,9 +521,14 @@ fun buildCoupleTools(
                     put("error", "photo not found")
                 }.toString()))
             } else {
+                // 翻出来给她看也算"又见到了一次"
+                albumRepository.touchSeen(photo.id)
                 val parts = mutableListOf<UIMessagePart>()
                 if (caption.isNotBlank()) parts.add(UIMessagePart.Text(caption))
-                parts.add(UIMessagePart.Image(url = "file://${photo.filePath}"))
+                // 有云端地址优先用它 —— 本地文件可能已经不在了（换过手机/清过数据）
+                val imgUrl = if (photo.remoteUrl.isNotBlank()) photo.remoteUrl
+                             else "file://${photo.filePath}"
+                parts.add(UIMessagePart.Image(url = imgUrl))
                 // 把当时写下的第一印象也带回来。递回去的不只是一张图，
                 // 是"我记得我第一次看见它的时候在想什么"。
                 if (photo.impression.isNotBlank()) {
@@ -662,7 +672,33 @@ fun buildCoupleTools(
             //   - 网络 URL：本地压根没有这个文件
             // 现在复制失败就直接返回错误，绝不留坏记录。
             val savedPath = copyIntoAlbumDir(context, rawPath)
-            if (savedPath == null) {
+
+            // 先按内容哈希查一遍。同一张图不管从哪条路进来、她发几遍，
+            // 哈希都一样 —— 命中就不重复存，只把"又见到了"记一次。
+            // 原来是按文件路径比，重发一次路径就变了，会存两份。
+            val dupItem = if (savedPath != null) {
+                val h = albumRepository.hashOf(java.io.File(savedPath))
+                if (h != null) albumRepository.findByHash(h) else null
+            } else null
+
+            if (dupItem != null) {
+                // 这张见过了。刚复制的那份删掉，别在磁盘上留重复文件。
+                runCatching { java.io.File(savedPath!!).delete() }
+                albumRepository.touchSeen(dupItem.id)
+                listOf(UIMessagePart.Text(buildJsonObject {
+                    put("success", true)
+                    put("already_saved", true)
+                    put("id", dupItem.id)
+                    put("seen", dupItem.seen + 1)
+                    put("caption", dupItem.caption)
+                    put("desc", dupItem.photoDesc)
+                    put("impression", dupItem.impression)
+                    put("note",
+                        "这张你以前存过了，没有重复存。上面的 desc 和 impression 就是你" +
+                        "当时写下的 —— 不用再看图重新描述一遍，你已经记得它了。" +
+                        "要改写就用 album_note。")
+                }.toString()))
+            } else if (savedPath == null) {
                 listOf(UIMessagePart.Text(buildJsonObject {
                     put("success", false)
                     put("error", "读不到这个文件，没有存进相册。file_path=" + rawPath +
@@ -685,14 +721,22 @@ fun buildCoupleTools(
                             id = newId.toInt(), name = folderName, createdBy = "sean"
                         )
                     }
+                // 上云 —— 有公网地址就不怕换手机/重装。传不上去也照样存本地，
+                // 下次进相册页会自动重试，不能因为没网就丢掉这张照片。
+                val cloudUrl = albumRepository.uploadFileToCloud(java.io.File(savedPath)) ?: ""
+                val hash = albumRepository.hashOf(java.io.File(savedPath)) ?: ""
+
                 albumRepository.add(
                     AlbumEntity(
                         filePath = savedPath,
+                        remoteUrl = cloudUrl,
+                        contentHash = hash,
                         caption = caption,
                         photoDesc = photoDesc,
                         impression = impression,
                         savedBy = "sean",
                         folderId = targetFolder.id,
+                        lastSeen = System.currentTimeMillis(),
                     )
                 )
                 listOf(UIMessagePart.Text(buildJsonObject {
@@ -700,6 +744,7 @@ fun buildCoupleTools(
                     put("caption", caption)
                     put("wrote_desc", photoDesc.isNotBlank())
                     put("wrote_impression", impression.isNotBlank())
+                    put("uploaded_to_cloud", cloudUrl.isNotBlank())
                     put("folder", targetFolder.name)
                     put("saved_path", savedPath)
                 }.toString()))
@@ -897,21 +942,27 @@ fun buildCoupleTools(
                             id = newId.toInt(), name = folderName, createdBy = "sean"
                         )
                     }
+                val cardCloudUrl = albumRepository.uploadFileToCloud(java.io.File(cardPath)) ?: ""
+                val cardHash = albumRepository.hashOf(java.io.File(cardPath)) ?: ""
                 albumRepository.add(
                     AlbumEntity(
                         filePath = cardPath,
+                        remoteUrl = cardCloudUrl,
+                        contentHash = cardHash,
                         caption = text.take(30),
                         photoDesc = "一张卡片，上面是" +
                             (if (speaker == "sean") "我" else "她") + "说的：" + text,
                         impression = impression,
                         savedBy = "sean",
                         folderId = targetFolder.id,
+                        lastSeen = System.currentTimeMillis(),
                     )
                 )
                 val parts = mutableListOf<UIMessagePart>()
                 parts.add(UIMessagePart.Text(buildJsonObject {
                     put("success", true)
                     put("folder", targetFolder.name)
+                    put("uploaded_to_cloud", cardCloudUrl.isNotBlank())
                     put("saved_path", cardPath)
                 }.toString()))
                 parts

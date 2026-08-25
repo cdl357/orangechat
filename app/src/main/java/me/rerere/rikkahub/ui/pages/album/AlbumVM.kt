@@ -30,6 +30,20 @@ class AlbumVM(
 
     fun delete(item: AlbumEntity) { viewModelScope.launch { repo.delete(item) } }
 
+    /**
+     * 把还没上云的照片传上去，顺便给老照片补算内容哈希。
+     *
+     * 跑在 viewModelScope 里而不是 Composable 的 rememberCoroutineScope：
+     * 后者在页面退出时会被取消，上传到一半断掉。表情包那边踩过这个坑。
+     * 失败不管，下次进页面再试 —— 传不上去也不影响本地看图。
+     */
+    fun syncToCloud() {
+        viewModelScope.launch {
+            runCatching { repo.migrateLocalToCloud() }
+            runCatching { repo.backfillHashes() }
+        }
+    }
+
     /** 给某张照片写/改备注。空字符串等于清掉备注。 */
     fun updateCaption(id: Int, caption: String) {
         if (id <= 0) return
