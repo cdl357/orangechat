@@ -14,6 +14,10 @@ class BulletinRepository(private val dao: BulletinDAO) {
     fun observeAll(): Flow<List<BulletinEntity>> = dao.observeAll()
     suspend fun add(item: BulletinEntity) = dao.insert(item)
 
+    /** 同步用：这张云端便签是不是已经拉下来过了。 */
+    suspend fun getByRemoteId(remoteId: String): BulletinEntity? =
+        if (remoteId.isBlank()) null else dao.getByRemoteId(remoteId)
+
     /**
      * 删便签。如果删的是原贴，挂在它下面的回复一起删掉，
      * 否则那些回复会变成指向不存在的 id 的孤儿（页面上就消失了但还占着库）。
