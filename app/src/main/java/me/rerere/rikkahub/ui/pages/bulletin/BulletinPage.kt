@@ -34,8 +34,13 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -90,6 +95,17 @@ private data class NoteThread(
 fun BulletinPage(vm: BulletinVM = koinViewModel()) {
     val seanNotes by vm.seanNotes.collectAsStateWithLifecycle()
     val yuriNotes by vm.yuriNotes.collectAsStateWithLifecycle()
+    val syncing by vm.syncing.collectAsStateWithLifecycle()
+    val syncMessage by vm.syncMessage.collectAsStateWithLifecycle()
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(syncMessage) {
+        val msg = syncMessage
+        if (msg != null) {
+            snackbarHostState.showSnackbar(msg)
+            vm.clearSyncMessage()
+        }
+    }
     var showAddDialog by remember { mutableStateOf(false) }
     // 不为 null 时表示正在回复这张便签
     var replyTarget by remember { mutableStateOf<BulletinEntity?>(null) }
@@ -117,10 +133,25 @@ fun BulletinPage(vm: BulletinVM = koinViewModel()) {
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("留言板") },
                 navigationIcon = { BackButton() },
+                actions = {
+                    // 手动拉一次云端便签（服务器独处时贴的，本地要拉才看得到）
+                    if (syncing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.padding(end = 16.dp).size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = Color(0xFF7A8C8C),
+                        )
+                    } else {
+                        TextButton(onClick = { vm.syncFromCloud() }) {
+                            Text("同步", fontSize = 13.sp, color = Color(0xFF5C6E6E))
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = BoardBgTop),
             )
         },
