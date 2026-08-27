@@ -40,4 +40,12 @@ interface BulletinDAO {
 
     @Query("UPDATE bulletin_note SET collapsed = :collapsed WHERE id = :id")
     suspend fun setCollapsed(id: Int, collapsed: Boolean)
+
+    /**
+     * 按云端 id 查。同步时用来判断这张便签是不是已经拉下来过了。
+     * remoteId 为空的一律当"没有"处理 —— 本地便签的 remote_id 全是空串，
+     * 不排掉的话第一次同步就会误判成"已存在"，云端便签永远拉不进来。
+     */
+    @Query("SELECT * FROM bulletin_note WHERE remote_id = :remoteId AND remote_id != '' LIMIT 1")
+    suspend fun getByRemoteId(remoteId: String): BulletinEntity?
 }
