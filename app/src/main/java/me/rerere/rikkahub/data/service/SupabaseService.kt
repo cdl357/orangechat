@@ -98,6 +98,20 @@ data class SupabaseDiaryRow(
     @SerialName("created_at") val createdAt: String = "",
 )
 
+/**
+ * 云端便签行（Supabase `bulletin_notes` 表）。
+ *
+ * 服务器上的 daemon 独处时会往这张表贴便签 —— 便签原来只在本地 Room 里，
+ * 服务器压根没地方可写，所以留言板一直只有在 App 里聊天时才贴得了。
+ */
+@Serializable
+data class SupabaseBulletinRow(
+    @SerialName("id") val id: String = "",
+    @SerialName("author") val author: String = "",
+    @SerialName("content") val content: String = "",
+    @SerialName("created_at") val createdAt: String = "",
+)
+
 class SupabaseService(
     private val supabaseUrl: String,
     private val supabaseApiKey: String,
@@ -322,6 +336,48 @@ class SupabaseService(
             val body = connection.inputStream.bufferedReader().use { it.readText() }
             val rows = json.decodeFromString(ListSerializer(SupabaseDiaryRow.serializer()), body)
             Log.d(TAG, "fetchDiaryEntries: got ${rows.size} rows from $tableName")
+            rows
+        }
+    }
+
+    /**
+     * 拉云端便签（daemon 独处时贴的那些）。单向：云端 -> 本地。
+     *
+     * 只取 author 和 content 这几个字段 —— 便签的回复关系（reply_to）不跨端同步，
+     * 云端 id 和本地自增 id 是两套，硬映射容易把回复挂到错的原贴上。
+     * 服务器贴的都是独立便签，拉下来也当独立便签。
+     */
+    suspend fun fetchBulletinNotes(
+        limit: Int = 50,
+        tableName: String = "bulletin_notes",
+    ): Result<List<SupabaseBulletinRow>> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (supabaseUrl.isBlank() || supabaseApiKey.isBlank()) {
+                throw IllegalArgumentException("Supabase URL and API Key must not be blank")
+            }
+
+            val baseUrl = supabaseUrl.trimEnd('/')
+            val query = "select=id,author,content,created_at&order=created_at.desc&limit=$limit"
+            val url = URL("$baseUrl/rest/v1/$tableName?$query")
+
+            val connection = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("apikey", supabaseApiKey)
+                setRequestProperty("Authorization", "Bearer $supabaseApiKey")
+                setRequestProperty("Accept", "application/json")
+                connectTimeout = 15000
+                readTimeout = 15000
+            }
+
+            val responseCode = connection.responseCode
+            if (responseCode !in 200..299) {
+                val errorBody = connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                throw Exception("Supabase API error ($responseCode): $errorBody")
+            }
+
+            val body = connection.inputStream.bufferedReader().use { it.readText() }
+            val rows = json.decodeFromString(ListSerializer(SupabaseBulletinRow.serializer()), body)
+            Log.d(TAG, "fetchBulletinNotes: got ${rows.size} rows from $tableName")
             rows
         }
     }
