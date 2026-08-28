@@ -69,8 +69,22 @@ fun CodeStyleBubbleBackground(
     tailStartSide: Boolean = false,
 ) {
     val shape = RoundedCornerShape(style.cornerRadiusDp.dp)
+    // 彩色柔光阴影：glowColor 非空时把 ambient/spot 阴影色一起染成该色。
+    // 白底壁纸上默认灰阴影几乎不可见，气泡会糊进背景 —— 这是加 glowColor 的原因。
+    // shadow(ambientColor/spotColor) 底层是 RenderNode 的阴影色，**API 28+ 生效**；
+    // 26/27 上参数被忽略，降级成默认阴影，不崩。
     val shadowModifier = if (style.elevationDp > 0f) {
-        Modifier.shadow(elevation = style.elevationDp.dp, shape = shape)
+        if (style.hasGlow) {
+            val glow = Color(style.glowColor!!)
+            Modifier.shadow(
+                elevation = style.elevationDp.dp,
+                shape = shape,
+                ambientColor = glow,
+                spotColor = glow,
+            )
+        } else {
+            Modifier.shadow(elevation = style.elevationDp.dp, shape = shape)
+        }
     } else {
         Modifier
     }
