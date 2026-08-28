@@ -86,11 +86,22 @@ data class BubbleStyle(
     /** 硬阴影偏移（贴纸/描边糖那种死板的影子），0 = 无 */
     val hardShadowOffsetDp: Float = 0f,
     val hardShadowColor: Long = 0xFF2B2B2B,
+    /**
+     * 彩色柔光阴影的颜色，null = 用系统默认的黑灰阴影。
+     * 只在 [elevationDp] > 0 时有意义。用来还原 CSS 里
+     * `box-shadow: 0 3px 12px rgba(105,177,255,.15)` 那种带色柔光 ——
+     * 白底壁纸上纯灰阴影几乎看不见，气泡会糊进背景。
+     *
+     * ⚠️ 底层依赖 RenderNode 的 ambient/spot shadow color，**API 28+ 才生效**；
+     * 本项目 minSdk 26，26/27 上 Compose 会忽略颜色降级成默认阴影（不崩，只是没有色）。
+     */
+    val glowColor: Long? = null,
     val textColor: Long? = null,
 ) {
     val hasGradient: Boolean get() = gradientEndColor != null
     val hasStroke: Boolean get() = strokeColor != null && strokeWidthDp > 0f
     val hasHardShadow: Boolean get() = hardShadowOffsetDp > 0f
+    val hasGlow: Boolean get() = glowColor != null && elevationDp > 0f
 }
 
 /**
@@ -183,8 +194,42 @@ object BubblePresets {
         textColor = 0xFF3C3C3C,
     )
 
+    /**
+     * 「淡海蓝」与「雪白」是**成对**的一套：淡海蓝给一侧、雪白给另一侧。
+     * 数值取自 echoes 淡海蓝章 CSS（作者：淅沥沥），原样换算：
+     *   .echoes-bubble-user   background #e0f2fe / border 1px #bae0ff / radius 24px / color #333
+     *   .echoes-bubble-other  background #ffffff / border 1px #e6f7ff / radius 24px / color #333
+     *   两者共用 box-shadow: 0 3px 12px rgba(105,177,255,0.15) → glowColor #69B1FF
+     * 阴影半径 12px 换算成 Compose elevation 取 3dp（elevation 与 blur 半径非线性，
+     * 3dp 在视觉上接近；这是估值，不是 CSS 里的精确对应）。
+     */
+    val SEA_BLUE = BubbleStyle(
+        id = "sea_blue",
+        name = "淡海蓝",
+        fillColor = 0xFFE0F2FE,
+        strokeColor = 0xFFBAE0FF,
+        strokeWidthDp = 1f,
+        cornerRadiusDp = 24f,
+        elevationDp = 3f,
+        glowColor = 0xFF69B1FF,
+        textColor = 0xFF333333,
+    )
+
+    val SNOW_WHITE = BubbleStyle(
+        id = "snow_white",
+        name = "雪白",
+        fillColor = 0xFFFFFFFF,
+        strokeColor = 0xFFE6F7FF,
+        strokeWidthDp = 1f,
+        cornerRadiusDp = 24f,
+        elevationDp = 3f,
+        glowColor = 0xFF69B1FF,
+        textColor = 0xFF333333,
+    )
+
     val ALL: List<BubbleStyle> = listOf(
         MILK_OUTLINE, WARM_ORANGE, MIST_BLUE, CANDY_PINK, PAPER, OUTLINE_CANDY, MINIMAL,
+        SEA_BLUE, SNOW_WHITE,
     )
 
     fun byId(id: String): BubbleStyle? = ALL.firstOrNull { it.id == id }
