@@ -48,8 +48,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-
-import androidx.compose.runtime.collectAsStateimport androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -144,14 +144,14 @@ import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.base64Encode
 import me.rerere.rikkahub.utils.openUrl
 import coil3.compose.AsyncImage
-
 import me.rerere.rikkahub.data.bubble.BubbleSkin
 import me.rerere.rikkahub.data.bubble.KThemeSkin
 import me.rerere.rikkahub.data.bubble.resolveStyle
 import me.rerere.rikkahub.data.repository.BubbleSkinRepository
 import me.rerere.rikkahub.ui.components.bubble.BubbleCharm
 import me.rerere.rikkahub.ui.components.bubble.CodeStyleBubbleBackground
-import me.rerere.rikkahub.ui.components.bubble.NinePatchBubbleBackgroundimport me.rerere.rikkahub.utils.splitIntoBubbleSegments
+import me.rerere.rikkahub.ui.components.bubble.NinePatchBubbleBackground
+import me.rerere.rikkahub.utils.splitIntoBubbleSegments
 import me.rerere.rikkahub.utils.urlDecode
 import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
@@ -448,7 +448,6 @@ private fun MessagePartsBlock(
     val bubbleAlpha = 1f - displaySettings.chatBubbleTransparency / 100f
     val partsState by rememberUpdatedState(parts)
 
-
     // 气泡皮肤：两侧都在 None/CodeStyle 时不订阅 Room 流，零额外开销
     val bubbleSkinRepository: BubbleSkinRepository = koinInject()
     val userSkin: BubbleSkin = displaySettings.userBubbleSkin
@@ -460,7 +459,8 @@ private fun MessagePartsBlock(
         remember { emptyList<KThemeSkin>() }
     }
     fun resolveKTheme(skin: BubbleSkin): KThemeSkin? =
-        (skin as? BubbleSkin.KTheme)?.let { k -> kThemeSkins.firstOrNull { it.id == k.themeId } } 
+        (skin as? BubbleSkin.KTheme)?.let { k -> kThemeSkins.firstOrNull { it.id == k.themeId } }
+ 
     val handleClickCitation: (String) -> Unit = remember {
         handler@{ citationId ->
             partsState.forEach { part ->
@@ -1117,7 +1117,6 @@ private fun BubbleSurface(
     }
     val shape = RoundedCornerShape(cornerRadius)
     val hasImage = imagePath.isNotBlank() && java.io.File(imagePath).exists()
-
     // ===== 气泡皮肤分支（None 时不进这里，走下面原样保留的旧路径） =====
     val skinCodeStyle = skin as? BubbleSkin.CodeStyle
     val skinKTheme = (skin as? BubbleSkin.KTheme)
@@ -1214,7 +1213,8 @@ private fun BubbleSurface(
             }
         }
         return
-    }    if (materialMode == DisplayMaterialMode.GLASS) {
+    }
+    if (materialMode == DisplayMaterialMode.GLASS) {
         Box(
             modifier = Modifier
                 .animateContentSize()

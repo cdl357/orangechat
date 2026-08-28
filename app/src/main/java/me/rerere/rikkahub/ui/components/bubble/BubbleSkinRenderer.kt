@@ -9,7 +9,6 @@ import android.graphics.BitmapFactory
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -209,8 +208,7 @@ fun NinePatchBubbleBackground(
             val imgW = image.width
             val imgH = image.height
             if (imgW <= 0 || imgH <= 0) {
-                onDrawBehind { /* 空图 */ }
-                return@drawWithCache
+                return@drawWithCache onDrawBehind { /* 空图 */ }
             }
             // ===== 第四节：cap 非对称公式（左右不对称、上下不对称） =====
             val capL = (spec.capLeftPt * safeScale).roundToInt().coerceIn(0, imgW - 1)
