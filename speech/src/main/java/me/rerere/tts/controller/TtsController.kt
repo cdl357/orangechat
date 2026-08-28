@@ -7,6 +7,7 @@
 package me.rerere.tts.controller
 
 import android.content.Context
+import android.speech.tts.TextToSpeech
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -28,6 +29,7 @@ import me.rerere.tts.model.PlaybackStatus
 import me.rerere.tts.model.TTSResponse
 import me.rerere.tts.provider.TTSManager
 import me.rerere.tts.provider.TTSProviderSetting
+import java.util.Locale
 import java.util.UUID
 
 private const val TAG = "TtsController"
@@ -45,6 +47,7 @@ class TtsController(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     // 组件
+    private val appContext: Context = context.applicationContext
     private val chunker = TextChunker(maxChunkLength = 160)
     private val synthesizer = TtsSynthesizer(ttsManager)
     private val audio = AudioPlayer(context)
@@ -53,6 +56,9 @@ class TtsController(
     private var currentProvider: TTSProviderSetting? = null
     private var workerJob: Job? = null
     private var isPaused = false
+    private var systemTtsProbe: TextToSpeech? = null
+    // 探测轮次：每次 setProvider 都自增，用来作废"在途"的旧探测回调
+    private var probeGeneration: Int = 0
 
     // 队列与缓存（基于稳定 ID）
     private val queue: java.util.concurrent.ConcurrentLinkedQueue<TtsChunk> = java.util.concurrent.ConcurrentLinkedQueue()
@@ -102,8 +108,88 @@ class TtsController(
     /** 选择/取消选择 Provider */
     fun setProvider(provider: TTSProviderSetting?) {
         currentProvider = provider
-        _isAvailable.update { provider != null }
-        if (provider == null) stop()
+        // 作废所有在途的旧探测回调（切到云端 provider 时也要作废，否则旧回调可能改写 isAvailable）
+        probeGeneration++
+        systemTtsProbe?.shutdown()
+        systemTtsProbe = null
+        when (provider) {
+            null -> {
+                _isAvailable.update { false }
+                stop()
+            }
+            is TTSProviderSetting.SystemTTS -> {
+                // 保守策略：探测通过前一律视为不可用，避免按钮亮着但点了没反应
+                _isAvailable.update { false }
+                verifySystemTts()
+            }
+            else -> _isAvailable.update { true }
+        }
+    }
+
+    /**
+     * 探测系统 TTS 引擎是否真的可用：
+     * 1. OnInitListener 的 status == SUCCESS
+     * 2. setLanguage() 返回值不是 LANG_MISSING_DATA / LANG_NOT_SUPPORTED
+     * 两者都通过才把 isAvailable 置为 true；任一失败置为 false 并写入可读的错误信息
+     */
+    private fun verifySystemTts() {
+        val myGeneration = ++probeGeneration
+        // 用数组做单元格持有实例：OnInitListener 可能在 TextToSpeech 构造函数返回之前
+        // 就被回调（部分厂商引擎如此），此时字段 systemTtsProbe 还没被赋值。
+        // 局部单元格在 lambda 创建时就已存在，回调里无论早晚都能拿到同一个引用。
+        val cell = arrayOfNulls<TextToSpeech>(1)
+        val listener = TextToSpeech.OnInitListener { status ->
+            val probe = cell[0]
+            // 这轮探测已被后来的 setProvider 作废：直接释放，不碰任何状态
+            if (myGeneration != probeGeneration) {
+                Log.i(TAG, "verifySystemTts: stale probe(gen=$myGeneration), discard")
+                probe?.shutdown()
+                return@OnInitListener
+            }
+            if (currentProvider !is TTSProviderSetting.SystemTTS) {
+                probe?.shutdown()
+                return@OnInitListener
+            }
+            if (status != TextToSpeech.SUCCESS) {
+                Log.e(TAG, "verifySystemTts: init failed, status=$status")
+                _isAvailable.update { false }
+                _error.update {
+                    "手机自带语音引擎初始化失败(status=$status)，请检查系统 TTS 设置，或到「设置 - 语音」改用云端语音"
+                }
+                return@OnInitListener
+            }
+            if (probe == null) {
+                // 理论上不该发生（cell 在 lambda 之前创建）。保守判为不可用，并说明原因。
+                Log.e(TAG, "verifySystemTts: probe instance unavailable in callback")
+                _isAvailable.update { false }
+                _error.update {
+                    "语音引擎探测失败（引擎实例未就绪），请重试或到「设置 - 语音」改用云端语音"
+                }
+                return@OnInitListener
+            }
+            val locale = Locale.getDefault()
+            val langResult = try {
+                probe.setLanguage(locale)
+            } catch (e: Exception) {
+                Log.e(TAG, "verifySystemTts: setLanguage threw", e)
+                TextToSpeech.LANG_NOT_SUPPORTED
+            }
+            if (langResult == TextToSpeech.LANG_MISSING_DATA ||
+                langResult == TextToSpeech.LANG_NOT_SUPPORTED
+            ) {
+                Log.e(TAG, "verifySystemTts: language $locale not supported, langResult=$langResult")
+                _isAvailable.update { false }
+                _error.update {
+                    "手机语音引擎不支持当前语言($locale)，请检查系统 TTS 语音数据，或到「设置 - 语音」改用云端语音"
+                }
+            } else {
+                Log.i(TAG, "verifySystemTts: ok, locale=$locale, langResult=$langResult")
+                _isAvailable.update { true }
+            }
+        }
+        val instance = TextToSpeech(appContext, listener)
+        cell[0] = instance
+        systemTtsProbe = instance
     }
 
     /**
@@ -115,7 +201,7 @@ class TtsController(
         if (text.isBlank()) return
         val provider = currentProvider
         if (provider == null) {
-            _error.update { "No TTS provider selected" }
+            _error.update { "未选择语音提供商，请到「设置 - 语音」中选择" }
             return
         }
 
@@ -219,6 +305,9 @@ class TtsController(
     /** 释放资源 */
     fun dispose() {
         stop()
+        probeGeneration++
+        systemTtsProbe?.shutdown()
+        systemTtsProbe = null
         scope.cancel()
         audio.release()
     }
@@ -227,7 +316,7 @@ class TtsController(
     private fun startWorker() {
         val provider = currentProvider
         if (provider == null) {
-            _error.update { "No TTS provider selected" }
+            _error.update { "未选择语音提供商，请到「设置 - 语音」中选择" }
             return
         }
 
@@ -260,8 +349,8 @@ class TtsController(
                         awaitOrCreate(chunk, provider)
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
-                        Log.e(TAG, "Synthesis error", e)
-                        _error.update { e.message ?: "TTS synthesis error" }
+                        Log.e(TAG, "Synthesis error for chunk index=${chunk.index}", e)
+                        _error.update { e.message ?: "语音合成失败（未知错误）" }
                         processedCount++
                         continue
                     }
@@ -272,7 +361,7 @@ class TtsController(
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
                         Log.e(TAG, "Playback error", e)
-                        _error.update { e.message ?: "Audio playback error" }
+                        _error.update { e.message ?: "音频播放失败" }
                     }
 
                     if (queue.isNotEmpty()) delay(chunkDelayMs)

@@ -6,6 +6,7 @@
 
 package me.rerere.rikkahub.ui.pages.setting
 
+import android.widget.Toast
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Tick01
 import me.rerere.hugeicons.stroke.StopCircle
@@ -67,6 +68,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -727,11 +729,20 @@ private fun TTSProviderItem(
                 Spacer(modifier = Modifier.weight(1f))
 
                 // TTS测试播放按钮
-                if (isSelected && isAvailable) {
+                // 不可用时也保留按钮（只灰显），点击给出原因；
+                // 否则引擎坏掉时按钮直接消失，用户无从判断问题在哪。
+                if (isSelected) {
                     val testText = stringResource(R.string.setting_tts_page_test_text)
+                    val ttsTestContext = LocalContext.current
                     IconButton(
                         onClick = {
-                            if (!isSpeaking) {
+                            if (!isAvailable) {
+                                Toast.makeText(
+                                    ttsTestContext,
+                                    "这个语音引擎当前不可用：手机自带语音引擎可能未安装语音数据。可以改选下面的云端语音。",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            } else if (!isSpeaking) {
                                 tts.speak(testText)
                             } else {
                                 tts.stop()
@@ -741,7 +752,11 @@ private fun TTSProviderItem(
                         Icon(
                             imageVector = if (isSpeaking) HugeIcons.StopCircle else HugeIcons.VolumeHigh,
                             contentDescription = if (isSpeaking) stringResource(R.string.stop) else stringResource(R.string.test_tts),
-                            tint = if (isSpeaking) MaterialTheme.colorScheme.error else LocalContentColor.current
+                            tint = when {
+                                isSpeaking -> MaterialTheme.colorScheme.error
+                                !isAvailable -> LocalContentColor.current.copy(alpha = 0.38f)
+                                else -> LocalContentColor.current
+                            }
                         )
                     }
                 }

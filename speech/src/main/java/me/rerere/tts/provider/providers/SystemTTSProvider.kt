@@ -38,80 +38,103 @@ class SystemTTSProvider : TTSProvider<TTSProviderSetting.SystemTTS> {
                 if (status == TextToSpeech.SUCCESS) {
                     val ttsInstance = tts ?: error("TextToSpeech instance is null")
 
-                // Set language
-                val locale = Locale.getDefault()
-                val langResult = ttsInstance.setLanguage(locale)
+                    // Set language
+                    val locale = Locale.getDefault()
+                    val langResult = ttsInstance.setLanguage(locale)
 
-                if (langResult == TextToSpeech.LANG_MISSING_DATA ||
-                    langResult == TextToSpeech.LANG_NOT_SUPPORTED
-                ) {
-                    Log.w(TAG, "generateSpeech: Language $locale not supported")
-                }
+                    if (langResult == TextToSpeech.LANG_MISSING_DATA ||
+                        langResult == TextToSpeech.LANG_NOT_SUPPORTED
+                    ) {
+                        Log.e(
+                            TAG,
+                            "generateSpeech: Language $locale not supported, " +
+                                "langResult=$langResult, engine=${ttsInstance.defaultEngine}"
+                        )
+                        ttsInstance.shutdown()
+                        if (continuation.isActive) continuation.resumeWithException(
+                            Exception("手机语音引擎不支持当前语言($locale)，请检查系统 TTS 语音数据，或到「设置 - 语音」改用云端语音")
+                        )
+                    } else {
 
-                // Set speech parameters
-                ttsInstance.setSpeechRate(providerSetting.speechRate)
-                ttsInstance.setPitch(providerSetting.pitch)
+                        // Set speech parameters
+                        ttsInstance.setSpeechRate(providerSetting.speechRate)
+                        ttsInstance.setPitch(providerSetting.pitch)
 
-                // Create temporary file for audio output using temp directory like RikkaHubApp
-                val tempDir = context.appTempFolder
-                val audioFile = File(tempDir, "tts_${System.currentTimeMillis()}.wav")
+                        // Create temporary file for audio output using temp directory like RikkaHubApp
+                        val tempDir = context.appTempFolder
+                        val audioFile = File(tempDir, "tts_${System.currentTimeMillis()}.wav")
 
-                val utteranceId = UUID.randomUUID().toString()
+                        val utteranceId = UUID.randomUUID().toString()
 
-                ttsInstance.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    override fun onStart(utteranceId: String?) {
-                        Log.i(TAG, "onStart: TTS engine started!")
-                    }
-
-                    override fun onDone(utteranceId: String?) {
-                        try {
-                            if (audioFile.exists()) {
-                                val audioData = audioFile.readBytes()
-                                audioFile.delete()
-
-                                if (continuation.isActive) continuation.resume(audioData)
-                            } else {
-                                if (continuation.isActive) continuation.resumeWithException(
-                                    Exception("Failed to generate audio file")
-                                )
+                        ttsInstance.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                            override fun onStart(utteranceId: String?) {
+                                Log.i(TAG, "onStart: TTS engine started!")
                             }
-                        } catch (e: Exception) {
-                            if (continuation.isActive) continuation.resumeWithException(e)
-                        } finally {
+
+                            override fun onDone(utteranceId: String?) {
+                                try {
+                                    if (audioFile.exists()) {
+                                        val audioData = audioFile.readBytes()
+                                        audioFile.delete()
+
+                                        if (continuation.isActive) continuation.resume(audioData)
+                                    } else {
+                                        Log.e(TAG, "onDone: audio file missing: $audioFile")
+                                        if (continuation.isActive) continuation.resumeWithException(
+                                            Exception("语音合成完成但未生成音频文件")
+                                        )
+                                    }
+                                } catch (e: Exception) {
+                                    if (continuation.isActive) continuation.resumeWithException(e)
+                                } finally {
+                                    ttsInstance.shutdown()
+                                }
+                            }
+
+                            override fun onError(utteranceId: String?) {
+                                Log.e(
+                                    TAG,
+                                    "onError: TTS synthesis failed! utteranceId=$utteranceId, " +
+                                        "engine=${ttsInstance.defaultEngine}, fileExists=${audioFile.exists()}"
+                                )
+                                audioFile.delete()
+                                if (continuation.isActive) continuation.resumeWithException(
+                                    Exception("语音合成失败（系统语音引擎报错），建议到「设置 - 语音」改用云端语音")
+                                )
+                                ttsInstance.shutdown()
+                            }
+                        })
+
+                        val result = ttsInstance.synthesizeToFile(
+                            request.text,
+                            null,
+                            audioFile,
+                            utteranceId
+                        )
+
+                        if (result != TextToSpeech.SUCCESS) {
+                            Log.e(
+                                TAG,
+                                "generateSpeech: synthesizeToFile failed to start, " +
+                                    "result=$result, engine=${ttsInstance.defaultEngine}"
+                            )
+                            if (continuation.isActive) continuation.resumeWithException(
+                                Exception("语音引擎无法开始合成(result=$result)，建议到「设置 - 语音」改用云端语音")
+                            )
                             ttsInstance.shutdown()
                         }
                     }
 
-                    override fun onError(utteranceId: String?) {
-                        Log.e(TAG, "onError: TTS synthesis failed!")
-                        audioFile.delete()
-                        if (continuation.isActive) continuation.resumeWithException(
-                            Exception("TTS synthesis failed")
-                        )
-                        ttsInstance.shutdown()
-                    }
-                })
-
-                val result = ttsInstance.synthesizeToFile(
-                    request.text,
-                    null,
-                    audioFile,
-                    utteranceId
-                )
-
-                if (result != TextToSpeech.SUCCESS) {
-                    if (continuation.isActive) continuation.resumeWithException(
-                        Exception("Failed to start TTS synthesis")
+                } else {
+                    Log.e(
+                        TAG,
+                        "generateSpeech: TextToSpeech init failed, status=$status, engine=${tts?.defaultEngine}"
                     )
-                    ttsInstance.shutdown()
+                    if (continuation.isActive) continuation.resumeWithException(
+                        Exception("手机自带语音引擎初始化失败(status=$status)，请检查系统 TTS 设置，或到「设置 - 语音」改用云端语音")
+                    )
                 }
-
-            } else {
-                if (continuation.isActive) continuation.resumeWithException(
-                    Exception("Failed to initialize TextToSpeech engine")
-                )
             }
-        }
         tts = TextToSpeech(context, listener)
 
         continuation.invokeOnCancellation {

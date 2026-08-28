@@ -8,8 +8,10 @@ package me.rerere.rikkahub.ui.hooks
 
 import android.content.Context
 import android.util.Log
+import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
@@ -54,6 +56,15 @@ fun rememberCustomTtsState(): CustomTtsState {
     DisposableEffect(ttsState) {
         onDispose {
             ttsState.cleanup()
+        }
+    }
+
+    LaunchedEffect(ttsState) {
+        ttsState.error.collect { error ->
+            if (!error.isNullOrBlank()) {
+                Log.e(TAG, "TTS error: $error")
+                Toast.makeText(context, error, Toast.LENGTH_LONG).show()
+            }
         }
     }
 

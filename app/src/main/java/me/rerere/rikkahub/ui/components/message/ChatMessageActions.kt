@@ -6,6 +6,7 @@
 
 package me.rerere.rikkahub.ui.components.message
 
+import android.widget.Toast
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -133,11 +134,16 @@ fun ColumnScope.ChatMessageActionButtons(
                 modifier = Modifier
                     .clip(CircleShape)
                     .clickable(
-                        enabled = isAvailable,
                         interactionSource = remember { MutableInteractionSource() },
                         indication = LocalIndication.current,
                         onClick = {
-                            if (!isSpeaking) {
+                            if (!isAvailable) {
+                                Toast.makeText(
+                                    context,
+                                    "语音引擎不可用：手机自带语音引擎可能未就绪，请到「设置 - 语音」更换 TTS 提供商（如云端语音）",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            } else if (!isSpeaking) {
                                 val text = message.toText()
                                 val textToSpeak = if (displaySettings.ttsOnlyReadQuoted) {
                                     text.extractQuotedContentAsText() ?: text
