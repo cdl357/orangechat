@@ -63,6 +63,7 @@ fun SettingDisplayColorPage(vm: SettingVM = koinViewModel()) {
     var showChatBackgroundColorPicker by remember { mutableStateOf(false) }
     var showPrimaryColorPicker by remember { mutableStateOf(false) }
     var showInputFieldColorPicker by remember { mutableStateOf(false) }
+    var showBubbleSkinPage by remember { mutableStateOf(false) }
 
     if (showChatTextColorPicker) {
         ColorPickerDialog(
@@ -307,8 +308,19 @@ fun SettingDisplayColorPage(vm: SettingVM = koinViewModel()) {
                             }
                         },
                     )
+                    item(
+                        headlineContent = { Text("气泡皮肤") },
+                        supportingContent = { Text("整套换肤、角挂件（小猫趴气泡）、ktheme 导入") },
+                        trailingContent = {
+                            TextButton(onClick = { showBubbleSkinPage = true }) { Text("打开") }
+                        },
+                    )
                 }
             }
         }
+    }
+
+    if (showBubbleSkinPage) {
+        BubbleSkinPage(onClose = { showBubbleSkinPage = false })
     }
 }

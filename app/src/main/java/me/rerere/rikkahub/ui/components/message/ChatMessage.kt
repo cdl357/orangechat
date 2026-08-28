@@ -48,7 +48,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+
+import androidx.compose.runtime.collectAsStateimport androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -143,7 +144,14 @@ import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.base64Encode
 import me.rerere.rikkahub.utils.openUrl
 import coil3.compose.AsyncImage
-import me.rerere.rikkahub.utils.splitIntoBubbleSegments
+
+import me.rerere.rikkahub.data.bubble.BubbleSkin
+import me.rerere.rikkahub.data.bubble.KThemeSkin
+import me.rerere.rikkahub.data.bubble.resolveStyle
+import me.rerere.rikkahub.data.repository.BubbleSkinRepository
+import me.rerere.rikkahub.ui.components.bubble.BubbleCharm
+import me.rerere.rikkahub.ui.components.bubble.CodeStyleBubbleBackground
+import me.rerere.rikkahub.ui.components.bubble.NinePatchBubbleBackgroundimport me.rerere.rikkahub.utils.splitIntoBubbleSegments
 import me.rerere.rikkahub.utils.urlDecode
 import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
@@ -439,7 +447,20 @@ private fun MessagePartsBlock(
     val displaySettings = LocalDisplaySettings.current
     val bubbleAlpha = 1f - displaySettings.chatBubbleTransparency / 100f
     val partsState by rememberUpdatedState(parts)
- 
+
+
+    // 气泡皮肤：两侧都在 None/CodeStyle 时不订阅 Room 流，零额外开销
+    val bubbleSkinRepository: BubbleSkinRepository = koinInject()
+    val userSkin: BubbleSkin = displaySettings.userBubbleSkin
+    val assistantSkin: BubbleSkin = displaySettings.assistantBubbleSkin
+    val needsKThemeLookup = userSkin is BubbleSkin.KTheme || assistantSkin is BubbleSkin.KTheme
+    val kThemeSkins: List<KThemeSkin> = if (needsKThemeLookup) {
+        bubbleSkinRepository.observeAllKThemes().collectAsState(initial = emptyList()).value
+    } else {
+        remember { emptyList<KThemeSkin>() }
+    }
+    fun resolveKTheme(skin: BubbleSkin): KThemeSkin? =
+        (skin as? BubbleSkin.KTheme)?.let { k -> kThemeSkins.firstOrNull { it.id == k.themeId } } 
     val handleClickCitation: (String) -> Unit = remember {
         handler@{ citationId ->
             partsState.forEach { part ->
@@ -541,6 +562,9 @@ private fun MessagePartsBlock(
                                                         bubbleAlpha = bubbleAlpha,
                                                         onClick = { onUserMessageClick?.invoke() },
                                                         enableLiveBubbleBlur = true,
+                                                        skin = userSkin,
+                                                        kThemeSkin = resolveKTheme(userSkin),
+                                                        isUser = true,
                                                     ) {
                                                         MarkdownBlock(
                                                             content = segment.replaceRegexes(
@@ -563,6 +587,9 @@ private fun MessagePartsBlock(
                                             bubbleAlpha = bubbleAlpha,
                                             onClick = { onUserMessageClick?.invoke() },
                                             enableLiveBubbleBlur = true,
+                                            skin = userSkin,
+                                            kThemeSkin = resolveKTheme(userSkin),
+                                            isUser = true,
                                         ) {
                                             MarkdownBlock(
                                                 content = displayText.replaceRegexes(
@@ -593,6 +620,9 @@ private fun MessagePartsBlock(
                                                         overlayEnabled = displaySettings.bubbleImageOverlayEnabled,
                                                         bubbleAlpha = bubbleAlpha,
                                                         enableLiveBubbleBlur = true,
+                                                        skin = assistantSkin,
+                                                        kThemeSkin = resolveKTheme(assistantSkin),
+                                                        isUser = false,
                                                     ) {
                                                         MarkdownBlock(
                                                             content = segment.replaceRegexes(
@@ -627,6 +657,9 @@ private fun MessagePartsBlock(
                                             overlayEnabled = displaySettings.bubbleImageOverlayEnabled,
                                             bubbleAlpha = bubbleAlpha,
                                             enableLiveBubbleBlur = true,
+                                            skin = assistantSkin,
+                                            kThemeSkin = resolveKTheme(assistantSkin),
+                                            isUser = false,
                                         ) {
                                             MarkdownBlock(
                                                 content = displayText.replaceRegexes(
@@ -868,6 +901,12 @@ private fun BubbleSurface(
     onClick: (() -> Unit)? = null,
     // 本轮原型：用户与助手的普通文本气泡传 true（最终由 LiveBubbleBlurContext 与 final 条件决定）
     enableLiveBubbleBlur: Boolean = false,
+    // 气泡皮肤。None = 与改动前完全一致的渲染路径（默认值保证所有未改的调用点行为不变）
+    skin: BubbleSkin = BubbleSkin.None,
+    // skin 为 KTheme 时由调用方从皮肤库解析出的数据；解析不到则回退旧路径
+    kThemeSkin: KThemeSkin? = null,
+    // 皮肤模式需要：尾巴朝向 / ktheme send vs receive 精灵
+    isUser: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val materialMode = LocalMaterialMode.current
@@ -1078,7 +1117,104 @@ private fun BubbleSurface(
     }
     val shape = RoundedCornerShape(cornerRadius)
     val hasImage = imagePath.isNotBlank() && java.io.File(imagePath).exists()
-    if (materialMode == DisplayMaterialMode.GLASS) {
+
+    // ===== 气泡皮肤分支（None 时不进这里，走下面原样保留的旧路径） =====
+    val skinCodeStyle = skin as? BubbleSkin.CodeStyle
+    val skinKTheme = (skin as? BubbleSkin.KTheme)
+        ?.let { k -> kThemeSkin?.takeIf { s -> s.id == k.themeId } }
+    val resolvedStyle = skinCodeStyle?.resolveStyle()
+    if (skin != BubbleSkin.None && (resolvedStyle != null || skinKTheme != null)) {
+        val skinShape = if (resolvedStyle != null) {
+            RoundedCornerShape(resolvedStyle.cornerRadiusDp.dp)
+        } else {
+            RoundedCornerShape(0.dp)
+        }
+        Box(modifier = Modifier.animateContentSize()) {
+            // 底层裁剪盒：实时模糊背景片段层（玻璃材质且已启用时）。
+            // 直接复用旧路径算好的 liveFragmentModifier / finalLiveBubbleBlurEnabled，
+            // 不改 LocalLiveBubbleBlur / cachedBlurEffect / drawLiveBackgroundFragment 任何内部实现。
+            // 本层必须自带 clip：drawLiveBackgroundFragment 的 drawImage 目标矩形可能超出层边界，
+            // 旧路径靠根 Box 的 clip(shape) 兜住（ref/ChatMessage.kt:1085,1093-1097），
+            // 皮肤分支的外层 Box 为了硬阴影/尾巴/挂件不裁剪，不能提供这个 clip。
+            if (materialMode == DisplayMaterialMode.GLASS && finalLiveBubbleBlurEnabled) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clip(skinShape)
+                        .then(liveFragmentModifier)
+                )
+            }
+            // 皮肤背景层：放在裁剪盒之外 —— 硬阴影、柔和阴影、尾巴要能画出气泡边界。
+            // CodeStyle 用皮肤自带圆角（resolvedStyle.cornerRadiusDp），不用外部 cornerRadius。
+            when {
+                resolvedStyle != null -> CodeStyleBubbleBackground(
+                    style = resolvedStyle,
+                    alpha = bubbleAlpha,
+                    tailEnabled = skinCodeStyle?.tailEnabled == true,
+                    tailStartSide = !isUser,
+                    modifier = Modifier.matchParentSize(),
+                )
+
+                skinKTheme != null -> NinePatchBubbleBackground(
+                    imagePath = if (isUser) skinKTheme.sendImagePath else skinKTheme.receiveImagePath,
+                    spec = if (isUser) skinKTheme.send else skinKTheme.receive,
+                    alpha = bubbleAlpha,
+                    modifier = Modifier.matchParentSize(),
+                )
+            }
+            // 内容盒：决定气泡尺寸的一层。玻璃材质下沿用旧路径的层次顺序
+            // （填充 → 夜间识读(模糊) → 径向高光(模糊) → 玻璃高光 → 内容），
+            // 只是填充层换成了上面的皮肤背景。
+            Box(
+                modifier = Modifier
+                    .let { m -> if (resolvedStyle != null) m.clip(skinShape) else m }
+                    .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            ) {
+                if (materialMode == DisplayMaterialMode.GLASS && finalLiveBubbleBlurEnabled && isDarkTheme) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .then(liveBubbleNightReadabilityModifier)
+                    )
+                }
+                if (materialMode == DisplayMaterialMode.GLASS && finalLiveBubbleBlurEnabled) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .then(liveBubbleRadialHighlightModifier)
+                    )
+                }
+                if (materialMode == DisplayMaterialMode.GLASS) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .then(glassHighlightModifier)
+                    )
+                }
+                if (skinKTheme != null) {
+                    // .ktheme 自带内容内边距（pt 直接当 dp 用），再垫 6dp 呼吸空间
+                    val spec = if (isUser) skinKTheme.send else skinKTheme.receive
+                    Column(
+                        modifier = Modifier.padding(
+                            start = (6f + spec.padLeftPt).dp,
+                            top = (6f + spec.padTopPt).dp,
+                            end = (6f + spec.padRightPt).dp,
+                            bottom = (6f + spec.padBottomPt).dp,
+                        )
+                    ) { content() }
+                } else {
+                    Column(modifier = Modifier.padding(8.dp)) { content() }
+                }
+            }
+            // 挂件层：最外层，链路上没有任何 clip()，挂件可以探出气泡边界（猫头露出来）
+            skinCodeStyle?.charm?.let { charm ->
+                Box(modifier = Modifier.matchParentSize()) {
+                    BubbleCharm(charm = charm)
+                }
+            }
+        }
+        return
+    }    if (materialMode == DisplayMaterialMode.GLASS) {
         Box(
             modifier = Modifier
                 .animateContentSize()

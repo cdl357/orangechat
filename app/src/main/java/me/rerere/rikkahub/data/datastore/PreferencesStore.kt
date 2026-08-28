@@ -52,6 +52,7 @@ import me.rerere.rikkahub.data.sync.s3.S3Config
 import me.rerere.rikkahub.ui.theme.CustomTheme
 import me.rerere.rikkahub.ui.theme.PresetThemes
 import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.rikkahub.data.bubble.BubbleSkin
 import me.rerere.rikkahub.utils.toMutableStateFlow
 import me.rerere.search.SearchCommonOptions
 import me.rerere.search.SearchServiceOptions
@@ -741,7 +742,10 @@ data class DisplaySetting(
     val userBubbleImagePath: String = "",
     val assistantBubbleImagePath: String = "",
     val bubbleCornerRadius: Float = 16f,
-    val bubbleImageOverlayEnabled: Boolean = false, // 关=纯图片, 开=图片+主题色遮罩
+    val bubbleImageOverlayEnabled: Boolean = false,
+    // 气泡皮肤（None = 关闭，保持改动前行为；存 JsonInstant 编解码的 DISPLAY_SETTING 里）
+    val userBubbleSkin: BubbleSkin = BubbleSkin.None,
+    val assistantBubbleSkin: BubbleSkin = BubbleSkin.None, // 关=纯图片, 开=图片+主题色遮罩
 )
 
 @Serializable

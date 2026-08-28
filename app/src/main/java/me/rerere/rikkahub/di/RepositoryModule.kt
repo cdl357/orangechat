@@ -140,4 +140,11 @@ val repositoryModule = module {
             androidContext()
         )
     }
+
+    single {
+        me.rerere.rikkahub.data.repository.BubbleSkinRepository(
+            get<me.rerere.rikkahub.data.db.AppDatabase>().bubbleKThemeDao(),
+            androidContext()
+        )
+    }
 }

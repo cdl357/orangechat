@@ -37,6 +37,7 @@ import me.rerere.rikkahub.data.db.entity.AlbumEntity
 import me.rerere.rikkahub.data.db.entity.AlbumFolderEntity
 import me.rerere.rikkahub.data.db.entity.LoveDateEntity
 import me.rerere.rikkahub.data.db.entity.StickerEntity
+import me.rerere.rikkahub.data.db.entity.BubbleKThemeEntity
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.db.dao.SshHostDao
 import me.rerere.rikkahub.data.db.dao.TodoDAO
@@ -46,6 +47,7 @@ import me.rerere.rikkahub.data.db.dao.AlbumDAO
 import me.rerere.rikkahub.data.db.dao.AlbumFolderDAO
 import me.rerere.rikkahub.data.db.dao.LoveDateDAO
 import me.rerere.rikkahub.data.db.dao.StickerDAO
+import me.rerere.rikkahub.data.db.dao.BubbleKThemeDAO
 import me.rerere.rikkahub.data.security.SecurityAuditDao
 import me.rerere.rikkahub.data.security.SecurityAuditEntity
 import me.rerere.rikkahub.workflow.db.WorkflowDao
@@ -84,8 +86,9 @@ import me.rerere.rikkahub.utils.JsonInstant
         AlbumFolderEntity::class,
         LoveDateEntity::class,
         StickerEntity::class,
+        BubbleKThemeEntity::class,
     ],
-    version = 42,
+    version = 43,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -149,6 +152,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun albumFolderDao(): AlbumFolderDAO
     abstract fun loveDateDao(): LoveDateDAO
     abstract fun stickerDao(): StickerDAO
+
+    abstract fun bubbleKThemeDao(): BubbleKThemeDAO
 }
 
 object TokenUsageConverter {
