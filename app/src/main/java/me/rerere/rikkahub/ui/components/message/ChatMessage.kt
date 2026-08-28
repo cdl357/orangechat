@@ -41,12 +41,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
@@ -910,6 +912,8 @@ private fun BubbleSurface(
     content: @Composable () -> Unit,
 ) {
     val materialMode = LocalMaterialMode.current
+    // 皮肤分支判断「用户是否显式设过聊天正文颜色」用；None 路径不读这个值，行为不变
+    val skinDisplaySettings = LocalDisplaySettings.current
     val liveContext = LocalLiveBubbleBlur.current
     val liveEnabled =
         enableLiveBubbleBlur &&
@@ -1190,6 +1194,29 @@ private fun BubbleSurface(
                             .then(glassHighlightModifier)
                     )
                 }
+                // 皮肤自带的文字色。预设色板（底色+文字色）是成对调出来的，
+                // 底色换了文字色不跟着换，就会出现「灰蓝字压在浅色气泡上」那种糊成一片的效果。
+                // 优先级：用户在「颜色自定义 → 聊天正文颜色」显式设过 → 尊重用户，皮肤不覆盖。
+                val skinTextColor: Color? = when {
+                    skinDisplaySettings.chatTextColor != null -> null
+                    resolvedStyle != null -> resolvedStyle.textColor?.let { Color(it) }
+                    skinKTheme != null ->
+                        (if (isUser) skinKTheme.send else skinKTheme.receive).textColor?.let { Color(it) }
+
+                    else -> null
+                }
+                // 提取成局部 lambda，两个分支共用，避免把同一段包装逻辑写两遍
+                val skinnedContent: @Composable () -> Unit = {
+                    if (skinTextColor != null) {
+                        CompositionLocalProvider(LocalContentColor provides skinTextColor) {
+                            ProvideTextStyle(LocalTextStyle.current.copy(color = skinTextColor)) {
+                                content()
+                            }
+                        }
+                    } else {
+                        content()
+                    }
+                }
                 if (skinKTheme != null) {
                     // .ktheme 自带内容内边距（pt 直接当 dp 用），再垫 6dp 呼吸空间
                     val spec = if (isUser) skinKTheme.send else skinKTheme.receive
@@ -1200,9 +1227,9 @@ private fun BubbleSurface(
                             end = (6f + spec.padRightPt).dp,
                             bottom = (6f + spec.padBottomPt).dp,
                         )
-                    ) { content() }
+                    ) { skinnedContent() }
                 } else {
-                    Column(modifier = Modifier.padding(8.dp)) { content() }
+                    Column(modifier = Modifier.padding(8.dp)) { skinnedContent() }
                 }
             }
             // 挂件层：最外层，链路上没有任何 clip()，挂件可以探出气泡边界（猫头露出来）
