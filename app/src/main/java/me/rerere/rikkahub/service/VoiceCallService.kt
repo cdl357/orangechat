@@ -41,14 +41,42 @@ import me.rerere.rikkahub.ui.hooks.CustomAsrState
 import me.rerere.rikkahub.ui.hooks.CustomTtsState
 import me.rerere.rikkahub.ui.hooks.createCustomAsrState
 import me.rerere.rikkahub.ui.hooks.createCustomTtsState
+import me.rerere.rikkahub.ui.pages.voice.BargeInDetector
+import me.rerere.rikkahub.ui.pages.voice.BargeInEvent
+import me.rerere.rikkahub.ui.pages.voice.BargeInInput
 import me.rerere.rikkahub.ui.pages.voice.VoiceCallStatus
 import me.rerere.rikkahub.ui.pages.voice.VoiceCallUiState
+import me.rerere.rikkahub.ui.pages.voice.VoiceTurnIdentity
+import me.rerere.rikkahub.ui.pages.voice.VoiceTurnTracker
 import okhttp3.OkHttpClient
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import kotlin.uuid.Uuid
 
 private const val TAG = "VoiceCallService"
+
+/** duck 阶段把 TTS 压到多低。不是 0 —— 完全静音的话用户会以为 AI 断了 */
+private const val DUCK_VOLUME = 0.25f
+
+/** 说话时长超过这个值就算"较长发言", 停句阈值放宽 */
+private const val LONG_SPEECH_MS = 1_800L
+
+/** 短发言的停句静音阈值 */
+private const val SHORT_ENDPOINT_MS = 900L
+
+/** 较长发言的停句静音阈值, 给思考停顿留空间 */
+private const val LONG_ENDPOINT_MS = 1_350L
+
+/** 单句硬上限, 从真实起音时刻开始算 */
+private const val MAX_UTTERANCE_MS = 60_000L
+
+/**
+ * 抢话确认后保留多少毫秒录音作为预卷。
+ *
+ * 打断是在用户连续说了约 520ms 之后才确认的, 加上检测循环的采样间隔,
+ * 保留 1 秒能覆盖"从开口到确认打断"这整段, 用户的第一个字不会被吞掉。
+ */
+private const val PREROLL_MS = 1_000L
 
 /**
  * 语音通话后台服务
@@ -87,6 +115,7 @@ class VoiceCallService : Service(), KoinComponent {
     private var conversationMonitorJob: Job? = null
     private var asrMonitorJob: Job? = null
     private var interruptDetectJob: Job? = null
+    private var playbackTrackerJob: Job? = null
     private var lastSpokenText: String = ""
 
     // 跟踪 AI 消息的增量, 用于流式 TTS
@@ -98,6 +127,38 @@ class VoiceCallService : Service(), KoinComponent {
 
     // 静音状态 (独立于 _uiState.isMuted, 检测循环里直接读这个字段更快)
     private var isMuted: Boolean = false
+
+    /**
+     * 身份协议。语音通话里有 6 条异步链路并行 (ASR / 模型流 / TTS 合成 / 音频播放 /
+     * VAD / 打断检测), 它们的回调都会迟到。只靠一个 status 枚举的话, 迟到的旧结果
+     * 会改写新一轮的状态: 上一句的 TTS 插进这一句、上一轮的"生成完成"把新一轮
+     * 踢回聆听。所有异步结果改状态之前先验一次身份, 不匹配整个丢弃。
+     */
+    private val turnTracker = VoiceTurnTracker()
+
+    /**
+     * 两阶段抢话检测器。
+     *
+     * 旧实现是"单帧音量 > 0.15f 立刻打断", 而麦克风全程开着、AI 的声音会从扬声器
+     * 被录回来, 于是 AI 每次刚开口就被自己的回声打断, 界面立刻弹回"正在聆听"
+     * —— 这就是通话完全用不了的直接原因。
+     */
+    private var bargeInDetector = BargeInDetector()
+
+    // TTS 播放起止时刻, 供打断检测做启动冷却和回声尾窗判断
+    private var playbackStartedAt: Long = 0L
+    private var playbackEndedAt: Long = 0L
+    private var lastPlaybackActive: Boolean = false
+
+    /**
+     * 发出这一轮消息时的身份快照。
+     *
+     * "生成完成"事件从 chatService 回来时不带身份信息, 只能靠这个快照判断它属于
+     * 哪一轮。必须在 sendMessage 的时候记下来, 不能在收到事件时读 turnTracker.active
+     * —— 那样校验恒成立, 等于没校验, 迟到的旧完成事件照样能把新一轮踢回聆听。
+     */
+    @Volatile
+    private var pendingGenerationIdentity: VoiceTurnIdentity? = null
 
     companion object {
         private val _activeConversationId = MutableStateFlow<String?>(null)
@@ -266,6 +327,14 @@ class VoiceCallService : Service(), KoinComponent {
         ttsSentLength = 0
         isMuted = false
 
+        // 开一通新通话: 之前所有迟到的结果从这一刻起全部失效
+        turnTracker.newCall()
+        bargeInDetector = BargeInDetector()
+        playbackStartedAt = 0L
+        playbackEndedAt = 0L
+        lastPlaybackActive = false
+        startPlaybackTracker()
+
         _uiState.update {
             it.copy(
                 status = VoiceCallStatus.Listening,
@@ -301,9 +370,24 @@ class VoiceCallService : Service(), KoinComponent {
      */
     private fun startListening() {
         tts.stop()
+        // duck 过就必须恢复音量, 否则下一轮 AI 的声音一直是压低的
+        tts.setVolume(1f)
         ttsSentLength = 0
         lastAssistantText = ""
         hasSentCurrentMessage = false
+
+        // 回到聆听 = 开新一轮。旧 turn 的模型流、TTS 片段、播放回调从此全部失效,
+        // 不会再把这一轮踢回上一轮的状态。
+        turnTracker.newTurn()
+        bargeInDetector.reset()
+
+        // AI 说话期间麦克风一直开着, 缓冲里攒了一整段从扬声器录回来的 AI 声音。
+        // 不清掉的话, 用户接下来说一句话时, 提交去转写的音频里会掺着 AI 刚说的话。
+        // 保留一小段尾巴而不是清空: 用户可能已经开口了, 清空会吞掉开头。
+        asr.resetBufferKeepingTail(PREROLL_MS)
+
+        // AI 不说话了, 把 ASR 的自动停止交回去 (它要负责判断用户说完没)
+        asr.setAutoStopOnSilence(true)
 
         _uiState.update {
             it.copy(
@@ -333,21 +417,33 @@ class VoiceCallService : Service(), KoinComponent {
     /**
      * VAD: 检测用户停顿后自动发送 (仅 Listening 状态生效).
      *
-     * 优化: 更快的响应时间, 更灵敏的检测.
-     * 阈值参数 (800ms / 2 字符 / 2 秒音量超时) 保持不变, 不要动.
+     * ## 自适应停句
+     * 原来是固定 800ms 静音就发送。固定阈值有个绕不开的矛盾:
+     * - 阈值短, 说长句中间正常思考停顿会被抢断, 半句话就被发出去;
+     * - 阈值长, 说"嗯" "好" 这种短句要傻等很久。
+     *
+     * 现在按已说话时长分档: 短发言 (< [LONG_SPEECH_MS]) 用 900ms 收口, 反应快;
+     * 说得比较长了就放宽到 1350ms, 给思考停顿留空间。
+     *
+     * ## 一句话硬上限
+     * [MAX_UTTERANCE_MS] 从真实起音时刻开始算, 不是从进入 Listening 开始算 ——
+     * 后者会把"用户还没开口的沉默"也算进去, 导致人刚说到一半就被强行截断。
      */
     private fun startVadDetection() {
         vadJob?.cancel()
+        val identity = turnTracker.active
         vadJob = serviceScope.launch {
             var lastTranscript = ""
             var silenceStartTime: Long = 0L
             var lastAmplitudeTime: Long = System.currentTimeMillis()
-            val silenceThresholdMs = 800L
+            var speechStartTime: Long = 0L
             val minTranscriptLength = 2
             val amplitudeTimeoutMs = 2000L
 
             while (true) {
                 delay(100)
+                // 身份校验: 这一轮已被取代就退出, 不能拿旧轮的计时去发新一轮的消息
+                if (!turnTracker.isActive(identity)) break
                 if (_uiState.value.status != VoiceCallStatus.Listening) break
                 if (isMuted) continue // 静音期间不检测, 也不发送
                 if (!_uiState.value.autoSendEnabled) continue
@@ -359,6 +455,20 @@ class VoiceCallService : Service(), KoinComponent {
                 // 检测音量活动 - 如果有声音就重置计时
                 if (recentAmplitude > 0.05f) {
                     lastAmplitudeTime = System.currentTimeMillis()
+                    // 记住真实起音时刻, 硬上限从这里开始算
+                    if (speechStartTime == 0L) {
+                        speechStartTime = System.currentTimeMillis()
+                    }
+                }
+
+                // 一句话硬上限: 防止环境噪声让一轮无限拖下去
+                if (speechStartTime > 0L &&
+                    System.currentTimeMillis() - speechStartTime >= MAX_UTTERANCE_MS &&
+                    currentTranscript.length >= minTranscriptLength
+                ) {
+                    Log.d(TAG, "VAD 到达单句硬上限, 强制发送: $currentTranscript")
+                    sendCurrentMessage()
+                    break
                 }
 
                 if (currentTranscript != lastTranscript) {
@@ -373,11 +483,25 @@ class VoiceCallService : Service(), KoinComponent {
                     val silentFor = System.currentTimeMillis() - silenceStartTime
                     val amplitudeSilentFor = System.currentTimeMillis() - lastAmplitudeTime
 
+                    // 自适应阈值: 说得越久, 越容忍中间的思考停顿
+                    val spokenMs = if (speechStartTime > 0L) {
+                        lastAmplitudeTime - speechStartTime
+                    } else {
+                        0L
+                    }
+                    val silenceThresholdMs = if (spokenMs < LONG_SPEECH_MS) {
+                        SHORT_ENDPOINT_MS
+                    } else {
+                        LONG_ENDPOINT_MS
+                    }
+
                     // 触发条件: 转写稳定且静音足够, 或音量持续低迷
                     if (silentFor >= silenceThresholdMs || amplitudeSilentFor >= amplitudeTimeoutMs) {
                         Log.d(
                             TAG,
-                            "VAD triggered auto-send: $currentTranscript (silentFor=$silentFor, ampSilent=$amplitudeSilentFor)"
+                            "VAD triggered auto-send: $currentTranscript " +
+                                "(silentFor=$silentFor, threshold=$silenceThresholdMs, " +
+                                "spokenMs=$spokenMs, ampSilent=$amplitudeSilentFor)"
                         )
                         sendCurrentMessage()
                         break
@@ -409,6 +533,10 @@ class VoiceCallService : Service(), KoinComponent {
         }
         ttsSentLength = 0
         lastAssistantText = ""
+
+        // 记下这一轮的身份。"生成完成"事件回来时不带身份, 只能靠这个快照判断
+        // 它属于哪一轮; 用户抢话后旧轮的完成事件会被 onGenerationDone 丢弃。
+        pendingGenerationIdentity = turnTracker.active
 
         try {
             chatService.sendMessage(
@@ -477,17 +605,37 @@ class VoiceCallService : Service(), KoinComponent {
             }
         }
 
-        // 监听生成完成 -> 等待 TTS 播放完成 -> 回到 Listening
+        startGenerationDoneMonitor()
+    }
+
+    /**
+     * 监听生成完成 -> 等待 TTS 播放完成 -> 回到 Listening。
+     *
+     * 拆成独立方法是因为 [interruptSpeaking] 会 cancel 掉它, 打断后必须重建;
+     * 原来它内联在 startConversationMonitor 里, 打断一次之后这条监听就永久没了,
+     * 下一轮 AI 说完再也回不到聆听。
+     */
+    private fun startGenerationDoneMonitor() {
         speakingMonitorJob?.cancel()
         speakingMonitorJob = serviceScope.launch {
             chatService.generationDoneFlow.collect { convId ->
                 if (convId != conversationId) return@collect
-                onGenerationDone()
+                // 注意: 这里必须传"发消息那一刻记下的身份", 不能传 turnTracker.active。
+                // 传 active 的话它永远等于当前身份, 校验恒成立, 等于没有校验。
+                onGenerationDone(pendingGenerationIdentity)
             }
         }
     }
 
-    private suspend fun onGenerationDone() {
+    private suspend fun onGenerationDone(identity: VoiceTurnIdentity?) {
+        // 身份校验: 这个"生成完成"事件属于哪一轮?
+        // 用户抢话后旧轮次的完成事件会迟到, 照旧处理的话它会把新一轮
+        // 强行推进 Speaking 再等一遍 TTS, 新一轮就此卡死。
+        if (!turnTracker.isActive(identity)) {
+            Log.d(TAG, "丢弃迟到的生成完成事件: $identity, 当前=${turnTracker.active}")
+            return
+        }
+
         // 朗读最后剩余的文本
         val finalText = _uiState.value.assistantText
         if (finalText.length > ttsSentLength) {
@@ -501,6 +649,12 @@ class VoiceCallService : Service(), KoinComponent {
         _uiState.update { it.copy(status = VoiceCallStatus.Speaking) }
         startInterruptDetection()
         waitForTtsToFinish()
+
+        // 等 TTS 的过程里用户可能已经抢话进了新一轮, 再验一次身份
+        if (!turnTracker.isActive(identity)) {
+            Log.d(TAG, "TTS 播完时该轮已失效, 不改状态: $identity")
+            return
+        }
 
         // 回到监听
         if (_uiState.value.status == VoiceCallStatus.Speaking) {
@@ -599,30 +753,100 @@ class VoiceCallService : Service(), KoinComponent {
      */
     private fun startInterruptDetection() {
         interruptDetectJob?.cancel()
+        val identity = turnTracker.active
+        bargeInDetector.reset()
+
+        // AI 说话期间不许 ASR 自己"检测到静音就停下来转写":
+        // 那样它会把扬声器传回来的 AI 声音当成一句话提交去转写, 白花钱且无意义。
+        // 麦克风仍然开着, 因为下面的检测循环需要读音量。
+        asr.setAutoStopOnSilence(false)
+
         interruptDetectJob = serviceScope.launch {
-            var baselineTranscript = _uiState.value.userTranscript
+            val frameMs = 60L
+            var lastTranscriptLength = _uiState.value.userTranscript.length
+
             while (true) {
-                delay(150)
+                delay(frameMs)
+
+                // 身份校验: 这一轮已经被取代 (用户抢过话/挂断) 就直接退出,
+                // 绝不能拿旧 turn 的判断去动新一轮的播放
+                if (!turnTracker.isActive(identity)) break
                 if (_uiState.value.status != VoiceCallStatus.Speaking) break
-                if (isMuted) continue // 静音期间不判断打断
+                if (isMuted) continue
 
-                val currentTranscript = _uiState.value.userTranscript
                 val amplitudes = _uiState.value.amplitudes
-                val recentAmplitude = amplitudes.takeLast(3).average().toFloat()
+                // 取最近一帧而不是三帧平均: 平均会把短促的起音抹平, 让真实抢话
+                // 迟迟攒不够连续时长。连续性由 BargeInDetector 自己累积保证。
+                val amplitude = amplitudes.lastOrNull() ?: 0f
 
-                // 转写文本相较于进入 Speaking 时有新增内容, 或者音量突然超过阈值,
-                // 都视为"用户开始说话了"
-                val hasNewTranscript = currentTranscript.length > baselineTranscript.length + 1
-                val hasLoudVoice = recentAmplitude > 0.15f
+                val currentLength = _uiState.value.userTranscript.length
+                val transcriptGrew = currentLength > lastTranscriptLength
+                lastTranscriptLength = currentLength
 
-                if (hasNewTranscript || hasLoudVoice) {
-                    Log.d(
-                        TAG,
-                        "检测到用户打断: transcript=$currentTranscript, amplitude=$recentAmplitude"
+                val event = bargeInDetector.push(
+                    BargeInInput(
+                        amplitude = amplitude,
+                        frameMs = frameMs,
+                        nowMs = System.currentTimeMillis(),
+                        playbackActive = lastPlaybackActive,
+                        playbackStartedAtMs = playbackStartedAt,
+                        playbackEndedAtMs = playbackEndedAt,
+                        transcriptGrew = transcriptGrew,
                     )
-                    interruptSpeaking()
-                    break
+                )
+
+                when (event) {
+                    BargeInEvent.Duck -> {
+                        // 疑似用户开口: 先压低音量, 生成继续。这一步可逆,
+                        // 顺带也降低了回声强度, 减少误判连锁。
+                        Log.d(TAG, "barge-in duck: amp=$amplitude, $identity")
+                        tts.setVolume(DUCK_VOLUME)
+                    }
+
+                    BargeInEvent.Restore -> {
+                        // 短促误触发 (咳嗽/键盘/桌面碰撞) 消失了, 恢复原音量,
+                        // 不打断这一轮回答
+                        Log.d(TAG, "barge-in restore: $identity")
+                        tts.setVolume(1f)
+                    }
+
+                    BargeInEvent.Interrupt -> {
+                        Log.d(TAG, "barge-in 确认打断: amp=$amplitude, $identity")
+                        // 预卷截断在 startListening() 里统一做 (正常结束和抢话
+                        // 两条路径都要), 这里不重复调。
+                        interruptSpeaking()
+                        break
+                    }
+
+                    null -> Unit
                 }
+            }
+        }
+    }
+
+    /**
+     * 跟踪 TTS 播放的起止时刻。
+     *
+     * 打断检测需要知道三件事才能把回声和真人分开:
+     * - 现在是否正在出声 (决定用高门槛还是低门槛)
+     * - 最近一次开始播放是什么时候 (启动冷却, 避开扬声器爆音)
+     * - 最近一次结束播放是什么时候 (回声尾窗, AudioTrack 停止和声音消失有延迟)
+     *
+     * 单独一个协程盯着 playbackState, 而不是在检测循环里读 —— 检测循环的
+     * 采样间隔是 60ms, 播放状态跳变可能落在两次采样之间, 起止时刻会漂。
+     */
+    private fun startPlaybackTracker() {
+        playbackTrackerJob?.cancel()
+        playbackTrackerJob = serviceScope.launch {
+            tts.playbackState.collect { state ->
+                val active = state.status == me.rerere.tts.model.PlaybackStatus.Playing ||
+                    state.status == me.rerere.tts.model.PlaybackStatus.Buffering
+                if (active && !lastPlaybackActive) {
+                    playbackStartedAt = System.currentTimeMillis()
+                } else if (!active && lastPlaybackActive) {
+                    playbackEndedAt = System.currentTimeMillis()
+                }
+                lastPlaybackActive = active
             }
         }
     }
@@ -635,7 +859,12 @@ class VoiceCallService : Service(), KoinComponent {
         if (_uiState.value.status != VoiceCallStatus.Speaking) return
         speakingMonitorJob?.cancel()
         interruptDetectJob?.cancel()
+        // startListening() 里会 newTurn() 让旧 generation 的一切结果失效,
+        // 并恢复被 duck 压低的音量
         startListening()
+        // 重建生成完成监听: 上面 cancel 掉了, 不重建的话下一轮 AI 说完
+        // 永远回不到聆听, 通话会卡在"正在说话"
+        startGenerationDoneMonitor()
     }
 
     /**
@@ -714,6 +943,11 @@ class VoiceCallService : Service(), KoinComponent {
         conversationMonitorJob?.cancel()
         asrMonitorJob?.cancel()
         interruptDetectJob?.cancel()
+        playbackTrackerJob?.cancel()
+        // 通话结束: 之后任何迟到的异步结果身份校验都会失败, 不会再动状态
+        turnTracker.endCall()
+        // 恢复音量, 否则下一通电话继承上一通被 duck 压低的音量
+        runCatching { tts.setVolume(1f) }
         asr.stop()
         tts.stop()
         _uiState.update {
@@ -788,3 +1022,4 @@ class VoiceCallService : Service(), KoinComponent {
         serviceScope.cancel()
     }
 }
+
