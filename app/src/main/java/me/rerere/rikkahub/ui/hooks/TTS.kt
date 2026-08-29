@@ -106,6 +106,14 @@ interface CustomTtsState {
     fun skipNext()
     fun fastForward(ms: Long = 5_000)
     fun setSpeed(speed: Float)
+
+    /**
+     * 设置播放音量 (0f~1f)。
+     * 语音通话的两阶段抢话检测用它先压低音量 (duck), 确认是误触发再恢复,
+     * 不必为一次咳嗽中断整轮回答。
+     */
+    fun setVolume(volume: Float)
+
     fun cleanup()
 
     /**
@@ -170,6 +178,10 @@ internal class CustomTtsStateImpl(
         controller.setSpeed(speed)
     }
 
+    override fun setVolume(volume: Float) {
+        controller.setVolume(volume)
+    }
+
     override fun enqueueText(text: String) {
         if (text.isBlank()) return
         val processed = text.stripMarkdown()
@@ -181,3 +193,4 @@ internal class CustomTtsStateImpl(
         controller.dispose()
     }
 }
+
