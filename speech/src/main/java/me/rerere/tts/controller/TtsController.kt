@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import me.rerere.tts.model.PlaybackState
 import me.rerere.tts.model.PlaybackStatus
 import me.rerere.tts.model.TTSResponse
@@ -69,6 +71,25 @@ class TtsController(
     // 行为参数
     private val chunkDelayMs = 120L
     private val prefetchCount = 4
+
+    /**
+     * 合成并发闸门。
+     *
+     * ## 为什么必须限流
+     * prefetchCount = 4 意味着预取窗口里会同时开 4 个 async 去打 TTS 接口。
+     * 而云端 TTS 普遍按套餐限制**并发**数 (ElevenLabs 低档套餐只有 2~3 路),
+     * 超出的请求直接返回 429。下面 worker 里对合成失败的分段是"记一条错误然后
+     * continue" —— 于是被限流的那几段被静默跳过, 用户听到的是"一段话只念了
+     * 其中两句", 而且中间那句凭空消失, 完全看不出发生了什么。
+     *
+     * 这里把合成串成一条队 (permits=1): 预取仍然提前发起, 但同一时刻只有一个
+     * 请求真正在飞。首句延迟不受影响 (第一段永远第一个拿到许可), 后续段落改成
+     * 排队等待, 而不是一起冲上去互相挤掉。
+     *
+     * 需要提速时可以调大 [TTS_MAX_CONCURRENT_SYNTHESIS], 但要确认套餐并发额度
+     * 撑得住 —— 429 的代价是丢一段话, 比慢一点严重得多。
+     */
+    private val synthesisGate = Semaphore(TTS_MAX_CONCURRENT_SYNTHESIS)
 
     // 状态流（保留与旧版兼容的 StateFlow）
     private val _isAvailable = MutableStateFlow(false)
@@ -277,6 +298,15 @@ class TtsController(
         audio.setSpeed(speed)
     }
 
+    /**
+     * 设置播放音量 (0f~1f)。
+     * 供语音通话的两阶段抢话检测在"疑似用户开口"时先压低音量用,
+     * 确认是误触发再调回 1f, 不必中断整轮回答。
+     */
+    fun setVolume(volume: Float) {
+        audio.setVolume(volume)
+    }
+
     /** 跳过下一段（不打断当前正在播放） */
     fun skipNext() {
         if (queue.isNotEmpty()) {
@@ -349,8 +379,24 @@ class TtsController(
                         awaitOrCreate(chunk, provider)
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
-                        Log.e(TAG, "Synthesis error for chunk index=${chunk.index}", e)
-                        _error.update { e.message ?: "语音合成失败（未知错误）" }
+                        // 这一段合成失败 -> 它不会被念出来。原来这里只记一条笼统的
+                        // "语音合成失败", 用户听到的是"一段话中间凭空少了一句",
+                        // 完全无法判断是漏了还是模型没写。现在把段号和原文前缀带上,
+                        // 让"少念了哪一句"变成可见信息。
+                        val preview = chunk.text.take(12)
+                        Log.e(
+                            TAG,
+                            "Synthesis error for chunk index=${chunk.index}, text=$preview",
+                            e
+                        )
+                        _error.update {
+                            "第 ${chunk.index + 1} 段没念出来（${preview}…）：" +
+                                (e.message ?: "未知错误")
+                        }
+                        // 失败的 Deferred 必须从缓存里移除。computeIfAbsent 不会替换
+                        // 已存在的键, 留着它意味着这一段永久坏掉: 重播、重试都会拿到
+                        // 同一个已失败的 Deferred, 于是永远缺这一句。
+                        cache.remove(chunk.id)
                         processedCount++
                         continue
                     }
@@ -385,22 +431,45 @@ class TtsController(
 
         for (i in begin until endExclusive) {
             val chunk = allChunks.getOrNull(i) ?: continue
-            cache.computeIfAbsent(chunk.id) {
-                scope.async(Dispatchers.IO) { synthesizer.synthesize(provider, chunk) }
-            }
+            cache.computeIfAbsent(chunk.id) { gatedSynthesis(provider, chunk) }
         }
         lastPrefetchedIndex = endExclusive - 1
     }
 
     private suspend fun awaitOrCreate(chunk: TtsChunk, provider: TTSProviderSetting): TTSResponse {
-        val deferred = cache.computeIfAbsent(chunk.id) {
-            scope.async(Dispatchers.IO) { synthesizer.synthesize(provider, chunk) }
-        }
+        val deferred = cache.computeIfAbsent(chunk.id) { gatedSynthesis(provider, chunk) }
         return try {
             deferred.await()
         } finally {
-            // 可按需保留缓存（此处保留，便于重播/重试）
+            // 成功的结果保留在缓存里，便于重播/重试。
+            // 失败的由 worker 那边 cache.remove 掉，不能留下坏的 Deferred。
+        }
+    }
+
+    /**
+     * 起一个受并发闸门保护的合成任务。
+     *
+     * 任务本身立刻创建 (预取的意义在于提前排队), 但真正发请求前要先拿到
+     * [synthesisGate] 的许可。这样多个分段是"排队逐个合成", 而不是一起冲上去
+     * 撞对端的并发上限拿一堆 429。
+     */
+    private fun gatedSynthesis(
+        provider: TTSProviderSetting,
+        chunk: TtsChunk
+    ): kotlinx.coroutines.Deferred<TTSResponse> = scope.async(Dispatchers.IO) {
+        synthesisGate.withPermit {
+            synthesizer.synthesize(provider, chunk)
         }
     }
     // endregion
 }
+
+/**
+ * 同时最多几个分段在合成。
+ *
+ * 定成 1 是因为云端 TTS 的并发额度普遍很低 (ElevenLabs 低档套餐 2~3 路),
+ * 而超限的后果是整段被丢弃、用户听到的话缺句子 —— 比慢一点严重得多。
+ * 确认套餐额度充足后可以调大。
+ */
+private const val TTS_MAX_CONCURRENT_SYNTHESIS = 1
+
