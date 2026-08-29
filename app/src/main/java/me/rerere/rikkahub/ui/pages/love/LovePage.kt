@@ -95,6 +95,9 @@ fun LovePage() {
     val loveDates by vm.loveDates.collectAsState()
     val quote by vm.quote.collectAsState()
     val quoteLoading by vm.quoteLoading.collectAsState()
+    // 情话生成失败的原因。原来失败是静默的（页面只转个圈然后继续显示旧文案），
+    // 这正是"端口早就错了"这个 bug 半个月没被发现的原因。
+    val quoteError by vm.quoteError.collectAsState()
 
     // 头像路径
     val prefs = remember { context.getSharedPreferences(PREF_FILE, Context.MODE_PRIVATE) }
@@ -313,12 +316,30 @@ fun LovePage() {
                                 }
                             }
                             Spacer(modifier = Modifier.height(10.dp))
-                            Text(
-                                text = if (quote.isNotBlank()) "「$quote」" else "「就算下雨，也想带你去看云。」",
-                                fontSize = 14.sp,
-                                color = TextMain,
-                                lineHeight = 22.sp,
-                            )
+                            // 优先显示真实情话；没有情话但有错误时把错误说出来，
+                            // 不要用兜底文案盖住失败（那样看起来像"正常但不刷新"）。
+                            val err = quoteError
+                            if (quote.isBlank() && !err.isNullOrBlank()) {
+                                Text(
+                                    text = err,
+                                    fontSize = 12.sp,
+                                    color = AccentPink,
+                                    lineHeight = 20.sp,
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "点右上角 ↻ 重试",
+                                    fontSize = 11.sp,
+                                    color = TextMuted,
+                                )
+                            } else {
+                                Text(
+                                    text = if (quote.isNotBlank()) "「$quote」" else "「就算下雨，也想带你去看云。」",
+                                    fontSize = 14.sp,
+                                    color = TextMain,
+                                    lineHeight = 22.sp,
+                                )
+                            }
                         }
                     }
                 }
