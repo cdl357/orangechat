@@ -145,7 +145,14 @@ class LoveVM(
      * 再出现"App 里存着一个早就失效的地址"这种情况。
      */
     private suspend fun resolveGateway(): GatewayEndpoint? {
-        val settings = runCatching { settingsStore.settingsFlow.first() }.getOrNull() ?: return null
+        // 用 settingsFlowRaw 而不是 settingsFlow。
+        // settingsFlow 是 `toMutableStateFlow(scope, Settings.dummy())`, 对 StateFlow 调
+        // .first() 拿到的是"当前值"——页面刚打开、真实配置还没从 DataStore 读出来时,
+        // 当前值就是那个 dummy(providers 是默认列表、chatModelId 是随机 uuid),
+        // 于是必然找不到模型, 白报一次"还没配置聊天模型"。
+        // settingsFlowRaw 直接来自 dataStore.data, 第一次发射就是真实持久化的配置。
+        // DiaryVM 里读 Supabase 配置用的也是 settingsFlowRaw, 照同一个先例。
+        val settings = runCatching { settingsStore.settingsFlowRaw.first() }.getOrNull() ?: return null
         val model = settings.getCurrentChatModel() ?: return null
         val provider = model.findProvider(settings.providers) ?: return null
 

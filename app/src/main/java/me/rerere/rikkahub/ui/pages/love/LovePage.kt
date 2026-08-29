@@ -43,12 +43,9 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.Cancel01
 import androidx.compose.ui.draw.alpha
-import org.json.JSONObject
 import org.koin.androidx.compose.koinViewModel
 import java.io.File
 import java.io.FileOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
 import java.text.SimpleDateFormat
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -78,8 +75,6 @@ private const val KEY_SEAN   = "sean_avatar_path"
 private const val KEY_YURI   = "yuri_avatar_path"
 private const val KEY_QUOTE  = "cached_quote"
 private const val KEY_QUOTE_DATE = "cached_quote_date"
-private const val GATEWAY_URL = "http://134.175.7.196:10000/v1/chat/completions"
-private const val API_SECRET  = "shenyuhuailiyuxin0709bendansyhsxdw"
 
 // ── 主页面 ────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
@@ -666,3 +661,4 @@ private fun saveImageToPrivate(context: Context, uri: Uri, name: String): String
         ""
     }
 }
+
