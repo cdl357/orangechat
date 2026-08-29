@@ -52,6 +52,18 @@ class AudioPlayer(context: Context) {
     fun clear() = player.clearMediaItems()
     fun release() = player.release()
     fun seekBy(ms: Long) = player.seekTo(player.currentPosition + ms)
+
+    /**
+     * 设置播放音量 (0f~1f)。
+     *
+     * 语音通话的两阶段抢话检测需要"先压低音量、确认后才真打断"这一步:
+     * 压低是可逆的, 用户只是咳嗽一声的话可以立刻恢复, 不用中断整轮回答。
+     * 压低音量同时也降低了扬声器回声被麦克风录进去的强度, 减少误判连锁。
+     */
+    fun setVolume(volume: Float) {
+        player.volume = volume.coerceIn(0f, 1f)
+    }
+
     fun setSpeed(speed: Float) {
         player.playbackParameters = PlaybackParameters(speed)
         _playbackState.update { it.copy(speed = speed) }
@@ -197,4 +209,5 @@ class AudioPlayer(context: Context) {
         ((value.toInt() shr 8) and 0xFF).toByte()
     )
 }
+
 
