@@ -65,6 +65,49 @@ class SiliconFlowASRController(
     private var recordingStartTime: Long = 0L
     private var amplitudesBuffer = mutableListOf<Float>()
 
+    /**
+     * 是否允许本 controller 自己在静音后停止录音并提交转写。
+     *
+     * 语音通话在 AI 说话期间会置为 false: 麦克风要继续开着给打断检测读音量,
+     * 但不能把扬声器传回来的 AI 声音当成一句话提交去转写。
+     */
+    @Volatile
+    private var autoStopOnSilence: Boolean = true
+
+    override fun setAutoStopOnSilence(enabled: Boolean) {
+        autoStopOnSilence = enabled
+    }
+
+    /**
+     * 丢掉已累积的 PCM, 只保留最后 [keepTailMs] 毫秒作为预卷。
+     *
+     * 抢话确认时调用: 之前的缓冲里混着从扬声器录回来的 AI 声音, 不能拿去转写;
+     * 但也不能整个清空 —— 打断是在用户已经开口几百毫秒后才确认的, 清空会把
+     * 用户开头那几个字吞掉。保留 1 秒左右刚好覆盖这段。
+     *
+     * 只截尾, 不停录音, 不提交转写。录音继续, 让用户把话说完。
+     */
+    override fun resetBufferKeepingTail(keepTailMs: Long) {
+        val buffer = audioBuffer ?: return
+        // 16-bit 单声道: 每毫秒的字节数 = sampleRate * 2 / 1000
+        val bytesPerMs = provider.sampleRate * 2 / 1000
+        val keepBytes = (keepTailMs * bytesPerMs).toInt().coerceAtLeast(0)
+
+        val data = buffer.toByteArray()
+        if (data.size <= keepBytes) return // 还没攒够, 不用截
+
+        // 从偶数字节边界开始截, 否则 16-bit 采样会错位, 回放/转写变噪音
+        var from = data.size - keepBytes
+        if (from % 2 != 0) from += 1
+
+        val fresh = ByteArrayOutputStream()
+        fresh.write(data, from, data.size - from)
+        audioBuffer = fresh
+        // 录音起点也要跟着挪, 否则时长统计和 VAD 的 30 秒上限会算错
+        recordingStartTime = System.currentTimeMillis() - keepTailMs
+        Log.d(TAG, "预卷截断: ${data.size} -> ${data.size - from} 字节")
+    }
+
     override fun start(onTranscriptChange: (String) -> Unit) {
         if (state.value.isRecording) return
         if (ContextCompat.checkSelfPermission(
@@ -318,6 +361,15 @@ class SiliconFlowASRController(
 
             while (isActive) {
                 delay(50)
+
+                // 语音通话在 AI 说话期间会关掉自动停止: 麦克风继续录 (打断检测要读音量),
+                // 但不能把扬声器回声当成用户说完一句话提交去转写。
+                // 证据也要清掉, 否则恢复的瞬间会拿着回声累积的计时立刻误判成"说完了"。
+                if (!autoStopOnSilence) {
+                    speechDetected = false
+                    lastAmplitudeTime = System.currentTimeMillis()
+                    continue
+                }
 
                 // 检查最大录音时长
                 val recordingDuration = System.currentTimeMillis() - recordingStartTime
