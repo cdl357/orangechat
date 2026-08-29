@@ -249,16 +249,41 @@ class SiliconFlowASRController(
                     .build()
 
                 val response = httpClient.newCall(request).execute()
-                val responseBody = response.body?.string()
+                // body.string() 对空响应体返回的是 ""，不是 null。
+                // 原来只判断 `responseBody == null` 等于没判断，"" 会一路穿到
+                // JSONObject("") 那里抛 JSONException，用户看到的是
+                // "End of input at character 0 of" —— 一句只有写代码的人能看懂的话，
+                // 而真正的原因 (HTTP 401/402/429/502) 全被吃掉了。
+                val responseBody = response.body?.string().orEmpty()
+                Log.d(TAG, "API response: ${response.code} $responseBody")
 
-                if (responseBody == null) {
+                // 先看 HTTP 状态码。原来整个函数没有任何 isSuccessful 检查，
+                // 不管对面返回 401 还是 502 都当成正常响应去解析 JSON。
+                // 同项目的 MiMoASRController 两道检查都有，这里是漏写的。
+                if (!response.isSuccessful) {
                     audioFile.delete()
-                    setError("API error: empty response")
+                    setError(describeHttpFailure(response.code, responseBody))
                     return@withContext
                 }
 
-                Log.d(TAG, "API response: ${response.code} $responseBody")
-                val json = JSONObject(responseBody)
+                if (responseBody.isBlank()) {
+                    audioFile.delete()
+                    setError("语音识别服务返回了空响应 (HTTP ${response.code})，请稍后再试")
+                    return@withContext
+                }
+
+                // 解析失败不能把 JSONException 的原文直接甩给用户。
+                // 带上状态码和响应体前缀，才能判断是网关返回了 HTML 错误页
+                // 还是接口格式变了。
+                val json = runCatching { JSONObject(responseBody) }.getOrElse { e ->
+                    Log.e(TAG, "响应不是合法 JSON: code=${response.code}, body=$responseBody", e)
+                    audioFile.delete()
+                    setError(
+                        "语音识别返回的内容无法解析 (HTTP ${response.code}): " +
+                            responseBody.take(80)
+                    )
+                    return@withContext
+                }
 
                 // SiliconFlow response: { code, message, data }
                 val code = json.optInt("code", -1)
@@ -302,6 +327,28 @@ class SiliconFlowASRController(
                 setError(e.message ?: "Transcription failed")
             }
         }
+    }
+
+    /**
+     * 把 HTTP 失败翻译成一句能指出下一步动作的话。
+     *
+     * 原来这些情况全都表现为 "End of input at character 0 of" —— 用户完全无法
+     * 判断是自己网不好、key 过期了、还是余额没了。错误信息的价值在于指向动作,
+     * 所以每一类都写清楚"去哪里改什么"。
+     * 服务端返回体也附在后面 (截断), 便于排查接口自身的报错。
+     */
+    private fun describeHttpFailure(code: Int, body: String): String {
+        val hint = when (code) {
+            401, 403 -> "语音识别的 API Key 无效或已过期，请到「设置 - 语音识别」检查"
+            402 -> "语音识别服务余额不足，请充值后再试"
+            404 -> "语音识别接口地址不对，请到「设置 - 语音识别」核对 Base URL"
+            413 -> "这段录音太长，服务端拒收了，说短一点再试"
+            429 -> "语音识别请求太频繁被限流了，等一会儿再说"
+            in 500..599 -> "语音识别服务端故障 (HTTP $code)，稍后再试"
+            else -> "语音识别失败 (HTTP $code)"
+        }
+        val detail = body.trim().take(80)
+        return if (detail.isEmpty()) hint else "$hint：$detail"
     }
 
     private fun pcmToWav(pcmData: ByteArray, sampleRate: Int): ByteArray {
