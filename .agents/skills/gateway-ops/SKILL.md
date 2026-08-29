@@ -1,6 +1,6 @@
 ---
 name: gateway-ops
-description: 改沈聿淮网关服务器（134.175.7.196）上的代码时用这张卡。涵盖 heartbeat.py / server.py 的改动规矩、必须先备份和语法检查、几个会把服务搞崩的雷（import re 位置、工具必须写在 __main__ 之前）、以及改完怎么验证。凡是要 SSH 上服务器动 Python 文件、加后台 worker、加 MCP 工具、查心跳任务跑没跑，都先读这张。
+description: 改沈聿淮网关服务器上的代码时用这张卡。涵盖 heartbeat.py / server.py 的改动规矩、必须先备份和语法检查、几个会把服务搞崩的雷（import re 位置、工具必须写在 __main__ 之前）、以及改完怎么验证。凡是要 SSH 上服务器动 Python 文件、加后台 worker、加 MCP 工具、查心跳任务跑没跑，都先读这张。
 ---
 
 # 网关运维（gateway-ops）
@@ -9,11 +9,19 @@ description: 改沈聿淮网关服务器（134.175.7.196）上的代码时用这
 
 ## 连上去
 
+连接信息（IP、端口、账号、密码）**不写在这个文件里** —— 这个仓库是公开的。
+需要时问小鑫，或者从 memory 里取。
+
 ```bash
-sshpass -p 'SyhLyx0709' ssh -o StrictHostKeyChecking=no root@134.175.7.196 "命令"
+# 凭据从 memory / 小鑫那里取，别往这个文件里贴
+sshpass -p "$SEAN_SSH_PASS" ssh -p "$SEAN_SSH_PORT" \
+  -o StrictHostKeyChecking=no "root@$SEAN_SSH_HOST" "命令"
 ```
 
 沙盒里没有 sshpass 就先 `apk add --no-cache sshpass`。
+
+⚠️ 这里原来直接写着服务器 IP 和 root 明文密码。仓库是 public 的，
+等于把门牌号和钥匙挂在门口。凭据一律不进仓库，包括注释和文档。
 
 代码都在 `/opt/services/gateway/code/`：
 
@@ -183,3 +191,4 @@ curl -s "$SUPABASE_URL/rest/v1/" -H "apikey: $SUPABASE_KEY" \
 - 别跳过 `py_compile`。语法错误会让服务无限重启，而端口还开着，看起来像没事。
 - 别在没备份的情况下改这些文件，它们不在 git 里。
 - 改完别只看 `is-active`，要去 journalctl 里确认目标 worker 真的打印了上线日志。
+
