@@ -95,6 +95,25 @@ interface CustomAsrState {
     val state: StateFlow<ASRState>
     fun start(onTranscriptChange: (String) -> Unit)
     fun stop()
+
+    /**
+     * 是否允许底层 controller 自己在静音后停止录音并提交转写。
+     *
+     * 语音通话在 AI 说话期间置为 false: 麦克风要继续录 (打断检测需要读音量),
+     * 但不能把扬声器传回来的 AI 声音当成用户说完一句话送去转写 ——
+     * 那是白花钱, 拿到的文本也毫无意义。
+     */
+    fun setAutoStopOnSilence(enabled: Boolean)
+
+    /**
+     * 丢掉已累积的录音, 只保留最后 [keepTailMs] 毫秒 (预卷)。
+     *
+     * 抢话确认时调用: 之前的缓冲混着从扬声器录回来的 AI 声音, 不能拿去转写;
+     * 但整个清空会把用户开口的头几个字吞掉 (打断是在开口几百毫秒后才确认的),
+     * 所以保留一段尾巴。
+     */
+    fun resetBufferKeepingTail(keepTailMs: Long)
+
     fun cleanup()
 }
  
@@ -153,6 +172,22 @@ internal class CustomAsrStateImpl(
         }
     }
  
+    override fun setAutoStopOnSilence(enabled: Boolean) {
+        try {
+            controller?.setAutoStopOnSilence(enabled)
+        } catch (e: Exception) {
+            Log.e(ASR_TAG, "setAutoStopOnSilence 失败, enabled=$enabled", e)
+        }
+    }
+
+    override fun resetBufferKeepingTail(keepTailMs: Long) {
+        try {
+            controller?.resetBufferKeepingTail(keepTailMs)
+        } catch (e: Exception) {
+            Log.e(ASR_TAG, "resetBufferKeepingTail 失败, keepTailMs=$keepTailMs", e)
+        }
+    }
+
     override fun stop() {
         try {
             controller?.stop()
