@@ -403,13 +403,15 @@ class ResponseAPI(
                         })
 
                         // If tool output contains images, inject a user message with the images
+                        // role 只能是 user（协议限制），所以靠这行文字讲清楚图是模型自己发的，
+                        // 否则下一轮会把自己发的表情包当成对方发来的。
                         if (imageOutput.isNotEmpty()) {
                             add(buildJsonObject {
                                 put("role", "user")
                                 putJsonArray("content") {
                                     add(buildJsonObject {
                                         put("type", "input_text")
-                                        put("text", "[Tool ${tool.toolName} returned an image]")
+                                        put("text", "[This image was sent BY YOU (the assistant) via the ${tool.toolName} tool. It is your own outgoing message, NOT something the user sent you. Do not thank the user for it or react to it as if you received it.]")
                                     })
                                     imageOutput.forEach { imagePart ->
                                         add(buildJsonObject {

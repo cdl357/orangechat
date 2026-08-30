@@ -664,13 +664,18 @@ class ChatCompletionsAPI(
 
                         // If tool output contains images, inject a user message with the images
                         // so the AI model can "see" them (tool result content only supports text)
+                        //
+                        // ⚠️ 这条消息的 role 只能是 user —— OpenAI 协议不允许 assistant 消息
+                        // 带 image_url，部分上游会直接拒。但这会让模型下一轮把「自己通过
+                        // send_sticker 发出去的表情包」读成「对方发来一张图」，然后回一句
+                        // “你发的表情包好可爱”。所以随图的这行文字必须把归属写死。
                         if (imageOutput.isNotEmpty()) {
                             add(buildJsonObject {
                                 put("role", "user")
                                 putJsonArray("content") {
                                     add(buildJsonObject {
                                         put("type", "text")
-                                        put("text", "[Tool ${tool.toolName} returned an image]")
+                                        put("text", "[This image was sent BY YOU (the assistant) via the ${tool.toolName} tool. It is your own outgoing message, NOT something the user sent you. Do not thank the user for it or react to it as if you received it.]")
                                     })
                                     imageOutput.forEach { imagePart ->
                                         add(buildJsonObject {

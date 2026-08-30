@@ -653,6 +653,8 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                     })
 
                     // If any tool output contains images, inject a user message with the images
+                    // role 只能是 user（Gemini 的 functionResponse 装不了图），
+                    // 所以靠随图的文字讲清楚归属，否则模型下一轮会把自己发的图当成对方发的。
                     val toolImages = group.tools.flatMap { tool ->
                         tool.output.filterIsInstance<UIMessagePart.Image>().map { imagePart ->
                             tool.toolName to imagePart
@@ -663,7 +665,7 @@ class GoogleProvider(private val client: OkHttpClient, context: Context? = null)
                             put("role", "user")
                             putJsonArray("parts") {
                                 add(buildJsonObject {
-                                    put("text", toolImages.joinToString(", ") { "[Tool ${it.first} returned an image]" })
+                                    put("text", toolImages.joinToString(" ") { "[This image was sent BY YOU (the assistant) via the ${it.first} tool. It is your own outgoing message, NOT something the user sent you. Do not thank the user for it or react to it as if you received it.]" })
                                 })
                                 toolImages.forEach { (_, imagePart) ->
                                     add(buildJsonObject {
