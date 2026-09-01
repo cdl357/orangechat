@@ -11,6 +11,11 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.layout.ContentScale
@@ -49,7 +54,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.LaunchedEffect
@@ -78,22 +82,24 @@ import java.util.Date
 import java.util.Locale
 import kotlin.random.Random
 
-// ── 软木板配色 ──────────────────────────────────────────────
-private val BoardBgTop = Color(0xFFF5F3EF)
-private val BoardBgBottom = Color(0xFFEBE8E2)
-private val WoodBarStart = Color(0xFF8B7355)
-private val WoodBarEnd = Color(0xFFA08060)
-private val InkMain = Color(0xFF3A3A2A)
-private val InkSub = Color(0xFFA09080)
-private val TapeColor = Color(0xB3FFFAF0)
-private val ThreadLine = Color(0x33A09080)
+// ── 水蓝配色 ──────────────────────────────────────────────
+private val BoardBgTop = Color(0xFFEAF6FF)
+private val BoardBgBottom = Color(0xFFD3EAFB)
+private val WoodBarStart = Color(0xFF9AD0F0)
+private val WoodBarEnd = Color(0xFFC3E5F8)
+private val InkMain = Color(0xFF33475A)
+private val InkSub = Color(0xFF8AA2B5)
+private val TapeColor = Color(0xB3EAF6FF)
+private val ThreadLine = Color(0x338AA2B5)
+private val AccentBlue = Color(0xFF7FC0E8)
 
+// 便签底色统一走水蓝系，深浅错开，整版是一片海的感觉
 private val noteColors = listOf(
-    listOf(Color(0xFFFFE8E8), Color(0xFFFFD8D8)),   // pink
-    listOf(Color(0xFFFFF9E0), Color(0xFFFFF0C0)),   // yellow
-    listOf(Color(0xFFE8F5E9), Color(0xFFD8ECD8)),   // green
-    listOf(Color(0xFFE3F2FD), Color(0xFFD0E8F8)),   // blue
-    listOf(Color(0xFFF3E5F5), Color(0xFFE8D8F0)),   // purple
+    listOf(Color(0xFFEAF6FF), Color(0xFFD6ECFB)),   // 浅蓝
+    listOf(Color(0xFFE3F1FF), Color(0xFFCBE4F9)),   // 天蓝
+    listOf(Color(0xFFEAF3FB), Color(0xFFD2E7F5)),   // 雾蓝
+    listOf(Color(0xFFE6F4F7), Color(0xFFCDE8ED)),   // 青蓝
+    listOf(Color(0xFFEFF3FF), Color(0xFFDAE2F8)),   // 蓝紫
 )
 
 
@@ -154,6 +160,8 @@ fun BulletinPage(vm: BulletinVM = koinViewModel()) {
     var showAddDialog by remember { mutableStateOf(false) }
     // 不为 null 时表示正在回复这张便签
     var replyTarget by remember { mutableStateOf<BulletinEntity?>(null) }
+    // 不为 null 时表示点开了某张便签看详情（回复藏在里面）
+    var openTarget by remember { mutableStateOf<NoteThread?>(null) }
 
     val allNotes = remember(seanNotes, yuriNotes) {
         (seanNotes + yuriNotes).sortedByDescending { it.createdAt }
@@ -204,7 +212,7 @@ fun BulletinPage(vm: BulletinVM = koinViewModel()) {
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { showAddDialog = true },
-                containerColor = Color(0xFFA8C4C4),
+                containerColor = AccentBlue,
                 contentColor = Color.White,
                 shape = RoundedCornerShape(14.dp),
             ) {
@@ -260,10 +268,13 @@ fun BulletinPage(vm: BulletinVM = koinViewModel()) {
                         contentPadding = PaddingValues(bottom = 100.dp),
                     ) {
                         items(threads, key = { it.root.id }) { thread ->
-                            NoteThreadColumn(
-                                thread = thread,
-                                onDelete = { vm.delete(it) },
-                                onReply = { replyTarget = it },
+                            StickyNote(
+                                note = thread.root,
+                                isReply = false,
+                                replyCount = thread.replies.size,
+                                onDelete = { vm.delete(thread.root) },
+                                onReply = { replyTarget = thread.root },
+                                onOpen = { openTarget = thread },
                             )
                         }
                     }
@@ -295,70 +306,152 @@ fun BulletinPage(vm: BulletinVM = koinViewModel()) {
             }
         )
     }
+
+    // 点开某张便签看详情：正文 + 藏在里面的回复
+    openTarget?.let { thread ->
+        // 数据变了要跟着刷新，从最新 threads 里重新取一次
+        val fresh = threads.firstOrNull { it.root.id == thread.root.id } ?: thread
+        NoteDetailDialog(
+            thread = fresh,
+            onDismiss = { openTarget = null },
+            onReply = { replyTarget = it },
+            onDelete = {
+                vm.delete(it)
+                // 删掉的是原贴，详情就没内容了，关掉
+                if (it.id == fresh.root.id) openTarget = null
+            },
+        )
+    }
 }
 
-/** 一整串（原贴 + 回复）占瀑布流里的一格，这样两列布局不会把一串拆散 */
+/** 点开便签后的详情弹窗：原贴正文 + 它下面的回复，都在这里才看得到 */
 @Composable
-private fun NoteThreadColumn(
+private fun NoteDetailDialog(
     thread: NoteThread,
-    onDelete: (BulletinEntity) -> Unit,
+    onDismiss: () -> Unit,
     onReply: (BulletinEntity) -> Unit,
+    onDelete: (BulletinEntity) -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        StickyNote(
-            note = thread.root,
-            isReply = false,
-            onDelete = { onDelete(thread.root) },
-            onReply = { onReply(thread.root) },
-        )
-        thread.replies.forEach { reply ->
-            Box(modifier = Modifier.fillMaxWidth()) {
-                // 左侧一条竖线，视觉上把回复串起来
-                Box(
-                    modifier = Modifier
-                        .padding(start = 8.dp)
-                        .width(1.dp)
-                        .height(28.dp)
-                        .background(ThreadLine)
-                )
-            }
-            Box(modifier = Modifier.padding(start = 14.dp)) {
-                StickyNote(
-                    note = reply,
-                    isReply = true,
-                    onDelete = { onDelete(reply) },
-                    onReply = { onReply(reply) },
-                )
-            }
-        }
+    val root = thread.root
+    val rootMoodOrNull = remember(root.content) { parseMood(root.content) }
+    val rootMood = rootMoodOrNull ?: "平静"
+    val rootFrom = if (root.author == "sean") "\uD83D\uDC8C from Sean" else "\uD83C\uDF38 from Yuri"
+    val rootTime = remember(root.createdAt) {
+        SimpleDateFormat("yyyy/M/d HH:mm", Locale.CHINA).format(Date(root.createdAt))
     }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color.White,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(rootFrom, fontSize = 13.sp, color = InkMain, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                if (rootMoodOrNull != null) {
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .background(BoardBgTop, RoundedCornerShape(10.dp))
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                    ) { Text(rootMood, fontSize = 10.sp, color = InkMain) }
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Image(
+                        painter = painterResource(moodCat(root.author, rootMood)),
+                        contentDescription = rootMood,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.size(56.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(stripMood(root.content), fontSize = 14.sp, color = InkMain, lineHeight = 20.sp)
+                }
+                Text(rootTime, fontSize = 10.sp, color = InkSub)
+
+                if (thread.replies.isNotEmpty()) {
+                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(ThreadLine))
+                    Text("${thread.replies.size} 条留言", fontSize = 11.sp, color = InkSub)
+                    thread.replies.forEach { reply ->
+                        val rMood = remember(reply.content) { parseMood(reply.content) ?: "平静" }
+                        val rFrom = if (reply.author == "sean") "Sean" else "Yuri"
+                        val rTime = remember(reply.createdAt) {
+                            SimpleDateFormat("M/d HH:mm", Locale.CHINA).format(Date(reply.createdAt))
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(BoardBgTop, RoundedCornerShape(10.dp))
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Image(
+                                painter = painterResource(moodCat(reply.author, rMood)),
+                                contentDescription = rMood,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.size(38.dp),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("$rFrom · $rTime", fontSize = 9.sp, color = InkSub)
+                                Spacer(Modifier.height(2.dp))
+                                Text(stripMood(reply.content), fontSize = 13.sp, color = InkMain, lineHeight = 18.sp)
+                            }
+                            androidx.compose.material3.IconButton(
+                                onClick = { onDelete(reply) },
+                                modifier = Modifier.size(20.dp),
+                            ) {
+                                Icon(HugeIcons.Delete01, contentDescription = "删除", modifier = Modifier.size(12.dp), tint = InkSub)
+                            }
+                        }
+                    }
+                } else {
+                    Text("还没有留言，点下面「留言」写一句", fontSize = 11.sp, color = InkSub)
+                }
+            }
+        },
+        confirmButton = {
+            FilledTonalButton(onClick = { onReply(root) }) { Text("留言") }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = { onDelete(root) }) { Text("删除", color = Color(0xFFD08A8A)) }
+                TextButton(onClick = onDismiss) { Text("关闭") }
+            }
+        },
+    )
 }
 
 @Composable
 private fun StickyNote(
     note: BulletinEntity,
     isReply: Boolean,
+    replyCount: Int = 0,
     onDelete: () -> Unit,
     onReply: () -> Unit,
+    onOpen: () -> Unit = {},
 ) {
     val colorIdx = remember(note.id) { Random(note.id).nextInt(noteColors.size) }
-    // 回复的便签摆得更正一点，视觉上从属于上面那张
     val rotation = remember(note.id, isReply) {
         if (isReply) Random(note.id + 100).nextInt(-1, 2).toFloat()
-        else Random(note.id + 100).nextInt(-3, 4).toFloat()
+        else Random(note.id + 100).nextInt(-2, 3).toFloat()
     }
     val colors = noteColors[colorIdx]
-    // 完整年月日时间，避免"今天"这种相对时间造成误解
     val timeStr = remember(note.createdAt) {
         SimpleDateFormat("yyyy/M/d HH:mm", Locale.CHINA).format(Date(note.createdAt))
     }
     val emoji = if (note.author == "sean") "\uD83D\uDC8C" else "\uD83C\uDF38"
     val fromLabel = if (note.author == "sean") "from Sean" else "from Yuri"
 
-    // 心情：优先从内容里解析 [mood:xxx]，解析不到就按 id 稳定地随机给一个（老便签也有猫）
-    val mood = remember(note.id, note.content) {
-        parseMood(note.content) ?: bulletinMoods[Random(note.id + 7).nextInt(bulletinMoods.size)]
-    }
+    // 老便签没存过心情，就别瞎标，猫用中性的"平静"
+    val moodOrNull = remember(note.content) { parseMood(note.content) }
+    val mood = moodOrNull ?: "平静"
     val displayContent = remember(note.content) { stripMood(note.content) }
     val catRes = remember(note.author, mood) { moodCat(note.author, mood) }
 
@@ -378,105 +471,69 @@ private fun StickyNote(
         modifier = Modifier
             .fillMaxWidth()
             .rotate(rotation)
+            .clickable { onOpen() }
     ) {
-        // 胶带（回复不贴胶带，它是挂在上面那张下面的）
-        if (!isReply) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .offset(y = (-8).dp)
-                    .width(40.dp)
-                    .height(14.dp)
-                    .rotate(-2f)
-                    .background(TapeColor, RoundedCornerShape(1.dp))
-            )
-        }
+        // 胶带
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .offset(y = (-8).dp)
+                .width(40.dp)
+                .height(14.dp)
+                .rotate(-2f)
+                .background(TapeColor, RoundedCornerShape(1.dp))
+        )
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    Brush.linearGradient(colors),
-                    RoundedCornerShape(1.dp)
-                )
-                .padding(
-                    start = 12.dp,
-                    top = if (isReply) 10.dp else 16.dp,
-                    end = 12.dp,
-                    bottom = 10.dp,
-                )
+                .background(Brush.linearGradient(colors), RoundedCornerShape(6.dp))
+                .padding(start = 12.dp, top = 16.dp, end = 12.dp, bottom = 10.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        if (isReply) "↳ $emoji $fromLabel" else "$emoji $fromLabel",
-                        fontSize = 10.sp,
-                        color = InkSub,
-                    )
+            // 头部：署名 + 心情
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("$emoji $fromLabel", fontSize = 10.sp, color = InkSub)
+                if (moodOrNull != null) {
                     Spacer(Modifier.width(6.dp))
-                    // 心情小胶囊
                     Box(
                         modifier = Modifier
-                            .background(Color(0x40FFFFFF), RoundedCornerShape(10.dp))
+                            .background(Color(0x55FFFFFF), RoundedCornerShape(10.dp))
                             .padding(horizontal = 7.dp, vertical = 1.dp)
-                    ) {
-                        Text(mood, fontSize = 9.sp, color = InkMain)
-                    }
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    androidx.compose.material3.IconButton(
-                        onClick = onReply,
-                        modifier = Modifier.size(16.dp),
-                    ) {
-                        Text("↩", fontSize = 11.sp, color = InkSub)
-                    }
-                    androidx.compose.material3.IconButton(
-                        onClick = onDelete,
-                        modifier = Modifier.size(16.dp),
-                    ) {
-                        Icon(
-                            HugeIcons.Delete01,
-                            contentDescription = "删除",
-                            modifier = Modifier.size(11.dp),
-                            tint = InkSub,
-                        )
-                    }
+                    ) { Text(mood, fontSize = 9.sp, color = InkMain) }
                 }
             }
             Spacer(Modifier.height(8.dp))
+            // 正文预览（最多 3 行），右下留给猫，不压到文字
             Text(
                 displayContent,
                 fontSize = 13.sp,
                 color = InkMain,
                 lineHeight = 19.sp,
-                modifier = Modifier.padding(end = 44.dp),
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(10.dp))
-            Text(
-                timeStr,
-                fontSize = 9.sp,
-                color = InkSub,
+            Spacer(Modifier.height(8.dp))
+            // 底部一行：时间在左，猫在右，互不遮挡
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.End,
-            )
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(timeStr, fontSize = 9.sp, color = InkSub)
+                    if (replyCount > 0) {
+                        Spacer(Modifier.height(3.dp))
+                        Text("\uD83D\uDCAC $replyCount 条留言 · 点开看", fontSize = 9.sp, color = AccentBlue)
+                    }
+                }
+                Image(
+                    painter = painterResource(catRes),
+                    contentDescription = mood,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .size(46.dp)
+                        .graphicsLayer { translationY = catDy }
+                )
+            }
         }
-        // 会动的猫，蹲在便签右下角
-        Image(
-            painter = painterResource(catRes),
-            contentDescription = mood,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 4.dp, bottom = 2.dp)
-                .size(if (isReply) 40.dp else 52.dp)
-                .graphicsLayer { translationY = catDy }
-        )
     }
 }
 
