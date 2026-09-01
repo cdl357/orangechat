@@ -4,8 +4,16 @@
  */
 package me.rerere.rikkahub.ui.pages.tide
 
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -61,6 +69,24 @@ private const val TIDE_BASE = "http://134.175.7.196:41337/api/tide"
 data class DriveState(val key: String, val label: String, val value: Float)
 data class ArcEntry(val text: String, val time: String, val drive: String, val label: String, val type: String)
 data class DreamEntry(val dream: String, val residue: String, val lucidity: Float, val createdAt: String, val source: String)
+
+// ── 水蓝配色 ──
+private val TideBg = androidx.compose.ui.graphics.Color(0xFFEAF6FF)
+private val TideCardHi = androidx.compose.ui.graphics.Color(0xFFDCEFFB)
+private val TideCardLo = androidx.compose.ui.graphics.Color(0xFFF1F8FF)
+private val TideInk = androidx.compose.ui.graphics.Color(0xFF33475A)
+private val TideInkSub = androidx.compose.ui.graphics.Color(0xFF7C93A6)
+private val TideAccent = androidx.compose.ui.graphics.Color(0xFF6FB4E0)
+
+/** 潮汐状态卡上的猫：睡着用睡姿，醒着按主驱力粗配，全用黑猫（潮汐是沈聿淮自己） */
+private fun tideCat(consciousness: String, topIntent: String): Int = when {
+    consciousness == "sleeping" || consciousness == "settling" -> me.rerere.rikkahub.R.drawable.cat_b_b_sleep_zzz
+    topIntent.contains("想") || topIntent.contains("黏") || topIntent.contains("占") -> me.rerere.rikkahub.R.drawable.cat_b_b_sit_heart
+    topIntent.contains("馋") || topIntent.contains("欲") -> me.rerere.rikkahub.R.drawable.cat_b_b_lie_fish
+    topIntent.contains("聊") || topIntent.contains("分享") || topIntent.contains("好奇") -> me.rerere.rikkahub.R.drawable.cat_b_b_peek_spark
+    topIntent.contains("难") || topIntent.contains("委") -> me.rerere.rikkahub.R.drawable.cat_b_b_back_heart
+    else -> me.rerere.rikkahub.R.drawable.cat_b_b_run
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -167,37 +193,58 @@ fun TidePage() {
             item {
                 Surface(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+                    shape = RoundedCornerShape(20.dp),
+                    color = TideCardHi,
                 ) {
-                    Column(Modifier.padding(16.dp)) {
-                        val consciousnessText = when (consciousness) {
-                            "sleeping" -> "\uD83D\uDCA4 沉睡中"
-                            "settling" -> "\uD83C\uDF19 正在入睡"
-                            "waking" -> "☀\uFE0F 醒来了"
-                            "active" -> "✨ 活跃"
-                            else -> "\uD83D\uDD2E $consciousness"
-                        }
-                        Text(
-                            text = consciousnessText,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            val consciousnessText = when (consciousness) {
+                                "sleeping" -> "\uD83D\uDCA4 沉睡中"
+                                "settling" -> "\uD83C\uDF19 正在入睡"
+                                "waking" -> "☀\uFE0F 醒来了"
+                                "active" -> "✨ 活跃"
+                                else -> "\uD83D\uDD2E $consciousness"
+                            }
+                            Text(
+                                text = consciousnessText,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TideInk,
+                            )
+                            Spacer(Modifier.height(4.dp))
                             Text(
                                 text = "疲惫度 ${String.format("%.0f", fatigue * 100)}%",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = TideInkSub,
                             )
                             if (topIntent.isNotBlank()) {
                                 Text(
-                                    text = "主驱力：$topIntent",
+                                    text = "此刻主导：$topIntent",
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary,
+                                    color = TideAccent,
                                 )
                             }
                         }
+                        // 会动的猫，跟着意识状态变
+                        val floatAnim = rememberInfiniteTransition(label = "tidecat")
+                        val catDy by floatAnim.animateFloat(
+                            initialValue = 0f, targetValue = -6f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(2200), repeatMode = RepeatMode.Reverse,
+                            ),
+                            label = "tidecatdy",
+                        )
+                        Image(
+                            painter = painterResource(tideCat(consciousness, topIntent)),
+                            contentDescription = null,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .size(72.dp)
+                                .graphicsLayer { translationY = catDy }
+                        )
                     }
                 }
             }
