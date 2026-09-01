@@ -124,6 +124,22 @@ private fun moodCat(author: String, mood: String): Int {
     }
 }
 
+// 没存心情的老便签：按 id 稳定散列到一批日常姿势，不再清一色一只猫。
+// 黑猫池给 Sean、白猫池给 Yuri，只是装饰，不显示心情文字，不构成"情绪判断"。
+private val seanDailyCats = listOf(
+    R.drawable.cat_b_b_sit_heart, R.drawable.cat_b_b_back_heart, R.drawable.cat_b_b_peek_spark,
+    R.drawable.cat_b_b_run, R.drawable.cat_b_b_door_peek, R.drawable.cat_b_b_lie_fish,
+    R.drawable.cat_b_b_sleep_zzz, R.drawable.cat_b_b_hug_fish,
+)
+private val yuriDailyCats = listOf(
+    R.drawable.cat_b_w_back_heart, R.drawable.cat_b_w_curl_heart, R.drawable.cat_b_w_peek_heart,
+    R.drawable.cat_b_w_run_heart, R.drawable.cat_b_w_hold_heart, R.drawable.cat_b_w_door_peek,
+)
+private fun dailyCat(author: String, id: Int): Int {
+    val pool = if (author == "yuri") yuriDailyCats else seanDailyCats
+    return pool[(id % pool.size + pool.size) % pool.size]
+}
+
 /** 从便签内容里解析心情标记 [mood:xxx]，解析不到返回 null */
 private fun parseMood(content: String): String? {
     val m = Regex("\\[mood:(.+?)]").find(content) ?: return null
@@ -365,7 +381,9 @@ private fun NoteDetailDialog(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Image(
-                        painter = painterResource(moodCat(root.author, rootMood)),
+                        painter = painterResource(
+                            if (rootMoodOrNull != null) moodCat(root.author, rootMoodOrNull) else dailyCat(root.author, root.id)
+                        ),
                         contentDescription = rootMood,
                         contentScale = ContentScale.Fit,
                         modifier = Modifier.size(56.dp),
@@ -379,7 +397,8 @@ private fun NoteDetailDialog(
                     Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(ThreadLine))
                     Text("${thread.replies.size} 条留言", fontSize = 11.sp, color = InkSub)
                     thread.replies.forEach { reply ->
-                        val rMood = remember(reply.content) { parseMood(reply.content) ?: "平静" }
+                        val rMoodOrNull = remember(reply.content) { parseMood(reply.content) }
+                        val rMood = rMoodOrNull ?: "平静"
                         val rFrom = if (reply.author == "sean") "Sean" else "Yuri"
                         val rTime = remember(reply.createdAt) {
                             SimpleDateFormat("M/d HH:mm", Locale.CHINA).format(Date(reply.createdAt))
@@ -392,7 +411,9 @@ private fun NoteDetailDialog(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Image(
-                                painter = painterResource(moodCat(reply.author, rMood)),
+                                painter = painterResource(
+                                    if (rMoodOrNull != null) moodCat(reply.author, rMoodOrNull) else dailyCat(reply.author, reply.id)
+                                ),
                                 contentDescription = rMood,
                                 contentScale = ContentScale.Fit,
                                 modifier = Modifier.size(38.dp),
@@ -449,11 +470,13 @@ private fun StickyNote(
     val emoji = if (note.author == "sean") "\uD83D\uDC8C" else "\uD83C\uDF38"
     val fromLabel = if (note.author == "sean") "from Sean" else "from Yuri"
 
-    // 老便签没存过心情，就别瞎标，猫用中性的"平静"
+    // 有心情就按心情配猫；老便签没心情就按 id 散列到不同日常姿势（不再全一样）
     val moodOrNull = remember(note.content) { parseMood(note.content) }
     val mood = moodOrNull ?: "平静"
     val displayContent = remember(note.content) { stripMood(note.content) }
-    val catRes = remember(note.author, mood) { moodCat(note.author, mood) }
+    val catRes = remember(note.author, note.id, moodOrNull) {
+        if (moodOrNull != null) moodCat(note.author, moodOrNull) else dailyCat(note.author, note.id)
+    }
 
     // 猫轻轻上下浮动
     val floatAnim = rememberInfiniteTransition(label = "catfloat")
