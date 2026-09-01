@@ -5,6 +5,18 @@
  */
 package me.rerere.rikkahub.ui.pages.bulletin
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
+import me.rerere.rikkahub.R
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -83,6 +95,39 @@ private val noteColors = listOf(
     listOf(Color(0xFFE3F2FD), Color(0xFFD0E8F8)),   // blue
     listOf(Color(0xFFF3E5F5), Color(0xFFE8D8F0)),   // purple
 )
+
+
+// ── 心情 → 猫 drawable。author=sean 用黑猫，author=yuri 用白猫，姿势按心情 ──
+// 单猫姿势缺失的（生气/委屈/撒娇）退化用双猫图，寓意"闹别扭还是黏一起"
+val bulletinMoods = listOf("开心", "想你", "害羞", "馋", "困", "偷看", "撒娇", "平静", "生气", "委屈")
+
+private fun moodCat(author: String, mood: String): Int {
+    val yuri = author == "yuri"
+    return when (mood) {
+        "开心" -> if (yuri) R.drawable.cat_b_w_run_heart else R.drawable.cat_b_b_run
+        "想你" -> if (yuri) R.drawable.cat_b_w_hold_heart else R.drawable.cat_b_b_sit_heart
+        "害羞" -> if (yuri) R.drawable.cat_b_w_peek_heart else R.drawable.cat_b_b_peek_spark
+        "馋" -> if (yuri) R.drawable.cat_a_pounce_white else R.drawable.cat_b_b_lie_fish
+        "困" -> if (yuri) R.drawable.cat_b_w_curl_heart else R.drawable.cat_b_b_sleep_zzz
+        "偷看" -> if (yuri) R.drawable.cat_b_w_door_peek else R.drawable.cat_b_b_door_peek
+        "撒娇" -> if (yuri) R.drawable.cat_a_kiss else R.drawable.cat_b_b_hug_fish
+        "平静" -> if (yuri) R.drawable.cat_b_w_back_heart else R.drawable.cat_b_b_back_heart
+        "生气" -> if (yuri) R.drawable.cat_a_chase else R.drawable.cat_a_back2back_tail
+        "委屈" -> if (yuri) R.drawable.cat_a_hug_sleep else R.drawable.cat_a_hug_stand
+        else -> if (yuri) R.drawable.cat_b_w_peek_heart else R.drawable.cat_b_b_peek_spark
+    }
+}
+
+/** 从便签内容里解析心情标记 [mood:xxx]，解析不到返回 null */
+private fun parseMood(content: String): String? {
+    val m = Regex("\\[mood:(.+?)]").find(content) ?: return null
+    val v = m.groupValues[1].trim()
+    return if (v in bulletinMoods) v else null
+}
+
+/** 去掉正文里的心情标记，用于展示 */
+private fun stripMood(content: String): String =
+    content.replace(Regex("\\s*\\[mood:.+?]\\s*"), " ").trim()
 
 /** 一串：原贴 + 挂在它下面的回复（按时间正序，先回的在上） */
 private data class NoteThread(
@@ -231,8 +276,8 @@ fun BulletinPage(vm: BulletinVM = koinViewModel()) {
         BulletinComposeDialog(
             replyTo = null,
             onDismiss = { showAddDialog = false },
-            onConfirm = { content, author ->
-                vm.post(content, author)
+            onConfirm = { content, author, mood ->
+                vm.post("$content [mood:$mood]", author)
                 showAddDialog = false
             }
         )
@@ -242,10 +287,10 @@ fun BulletinPage(vm: BulletinVM = koinViewModel()) {
         BulletinComposeDialog(
             replyTo = target,
             onDismiss = { replyTarget = null },
-            onConfirm = { content, author ->
+            onConfirm = { content, author, mood ->
                 // 回复的回复也挂在同一个原贴下面，只做一层，不无限嵌套
                 val parentId = if (target.replyTo != 0) target.replyTo else target.id
-                vm.post(content, author, replyTo = parentId)
+                vm.post("$content [mood:$mood]", author, replyTo = parentId)
                 replyTarget = null
             }
         )
@@ -310,6 +355,25 @@ private fun StickyNote(
     val emoji = if (note.author == "sean") "\uD83D\uDC8C" else "\uD83C\uDF38"
     val fromLabel = if (note.author == "sean") "from Sean" else "from Yuri"
 
+    // 心情：优先从内容里解析 [mood:xxx]，解析不到就按 id 稳定地随机给一个（老便签也有猫）
+    val mood = remember(note.id, note.content) {
+        parseMood(note.content) ?: bulletinMoods[Random(note.id + 7).nextInt(bulletinMoods.size)]
+    }
+    val displayContent = remember(note.content) { stripMood(note.content) }
+    val catRes = remember(note.author, mood) { moodCat(note.author, mood) }
+
+    // 猫轻轻上下浮动
+    val floatAnim = rememberInfiniteTransition(label = "catfloat")
+    val catDy by floatAnim.animateFloat(
+        initialValue = 0f,
+        targetValue = -5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1600 + (note.id % 5) * 180),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "catdy",
+    )
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -346,11 +410,22 @@ private fun StickyNote(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    if (isReply) "↳ $emoji $fromLabel" else "$emoji $fromLabel",
-                    fontSize = 10.sp,
-                    color = InkSub,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (isReply) "↳ $emoji $fromLabel" else "$emoji $fromLabel",
+                        fontSize = 10.sp,
+                        color = InkSub,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    // 心情小胶囊
+                    Box(
+                        modifier = Modifier
+                            .background(Color(0x40FFFFFF), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 7.dp, vertical = 1.dp)
+                    ) {
+                        Text(mood, fontSize = 9.sp, color = InkMain)
+                    }
+                }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -376,10 +451,11 @@ private fun StickyNote(
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                note.content,
+                displayContent,
                 fontSize = 13.sp,
                 color = InkMain,
                 lineHeight = 19.sp,
+                modifier = Modifier.padding(end = 44.dp),
             )
             Spacer(Modifier.height(10.dp))
             Text(
@@ -390,6 +466,17 @@ private fun StickyNote(
                 textAlign = TextAlign.End,
             )
         }
+        // 会动的猫，蹲在便签右下角
+        Image(
+            painter = painterResource(catRes),
+            contentDescription = mood,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 4.dp, bottom = 2.dp)
+                .size(if (isReply) 40.dp else 52.dp)
+                .graphicsLayer { translationY = catDy }
+        )
     }
 }
 
@@ -397,11 +484,12 @@ private fun StickyNote(
  * 贴便签 / 回复便签共用一个对话框。
  * replyTo 非空时顶部显示被回复的原文，标题变成"回复"。
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun BulletinComposeDialog(
     replyTo: BulletinEntity?,
     onDismiss: () -> Unit,
-    onConfirm: (content: String, author: String) -> Unit,
+    onConfirm: (content: String, author: String, mood: String) -> Unit,
 ) {
     var content by remember { mutableStateOf("") }
     // 回复时默认署名切到"另一个人"，省一次手动点
@@ -410,6 +498,7 @@ private fun BulletinComposeDialog(
             if (replyTo != null && replyTo.author == "yuri") "sean" else "yuri"
         )
     }
+    var mood by remember { mutableStateOf("平静") }
     var submitted by remember { mutableStateOf(false) }
 
     AlertDialog(
@@ -466,6 +555,32 @@ private fun BulletinComposeDialog(
                         Text("Yuri", modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontSize = 12.sp)
                     }
                 }
+                // 心情选择 + 实时预览的猫
+                Text("心情：", style = MaterialTheme.typography.bodySmall)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    bulletinMoods.forEach { m ->
+                        Surface(
+                            onClick = { mood = m },
+                            color = if (mood == m) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+                            shape = RoundedCornerShape(16.dp),
+                        ) {
+                            Text(m, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp), fontSize = 11.sp)
+                        }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("这条会配这只猫：", fontSize = 11.sp, color = InkSub)
+                    Spacer(Modifier.width(6.dp))
+                    Image(
+                        painter = painterResource(moodCat(author, mood)),
+                        contentDescription = mood,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.size(46.dp),
+                    )
+                }
             }
         },
         confirmButton = {
@@ -474,7 +589,7 @@ private fun BulletinComposeDialog(
                 onClick = {
                     if (!submitted) {
                         submitted = true
-                        onConfirm(content, author)
+                        onConfirm(content, author, mood)
                     }
                 },
                 enabled = content.isNotBlank() && !submitted,
