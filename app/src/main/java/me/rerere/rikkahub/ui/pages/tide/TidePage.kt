@@ -256,13 +256,14 @@ fun TidePage() {
                     Surface(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                         shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        color = TideCardLo,
                     ) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
                                 "十二维驱力",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Medium,
+                                color = TideInk,
                             )
                             drives.forEach { drive ->
                                 DriveRow(drive)
@@ -325,21 +326,31 @@ private fun DriveRow(drive: DriveState) {
         Text(
             text = drive.label,
             style = MaterialTheme.typography.bodySmall,
+            color = TideInk,
             modifier = Modifier.width(52.dp),
             maxLines = 1,
         )
         Spacer(Modifier.width(8.dp))
+        // 强弱分色：高的深蓝、中的中蓝、低的浅灰蓝，一眼看出此刻被什么驱动
+        val barColor = when {
+            drive.value >= 0.66f -> Color(0xFF4A93C9)
+            drive.value >= 0.4f -> Color(0xFF7FC0E8)
+            else -> Color(0xFFB8CEDD)
+        }
         LinearProgressIndicator(
             progress = { (animVal / 1f).coerceIn(0f, 1f) },
             modifier = Modifier.weight(1f).height(6.dp),
+            color = barColor,
+            trackColor = Color(0xFFE3F1FB),
             strokeCap = StrokeCap.Round,
         )
         Spacer(Modifier.width(8.dp))
         Text(
-            text = String.format("%.0f%%", drive.value * 100),
+            // 保留一位小数：驱力常在千分位浮动，整数百分比会把 0.7963 和 0.80 都显示成 80%，看着像不动
+            text = String.format("%.1f%%", drive.value * 100),
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.width(38.dp),
+            color = TideAccent,
+            modifier = Modifier.width(44.dp),
         )
     }
 }
