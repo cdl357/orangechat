@@ -5,6 +5,15 @@
  */
 package me.rerere.rikkahub.ui.pages.diary
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -58,21 +67,26 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// ── 日记本配色 ──────────────────────────────────────────────
-private val NotebookBgOuter = Color(0xFFF0EBE3)
-private val NotebookBg = Color(0xFFFAF8F5)
+// ── 水蓝配色 ──────────────────────────────────────────────
+private val NotebookBgOuter = Color(0xFFEAF6FF)
+private val NotebookBg = Color(0xFFF4FAFF)
 private val CardBg = Color.White
-private val InkMain = Color(0xFF3A3A2A)
-private val InkSub = Color(0xFF7A7A6A)
-private val InkMuted = Color(0xFFA09080)
-private val InkFaint = Color(0xFFB0A090)
-private val TagBg = Color(0xFFF5F0E8)
-private val SeanBarStart = Color(0xFFA8C4C4)
-private val SeanBarEnd = Color(0xFFC4D4D4)
-private val YuriBarStart = Color(0xFFD4A5A0)
-private val YuriBarEnd = Color(0xFFE8C4C0)
-private val HoleColor = Color(0xFFE8E0D8)
-private val TabBg = Color(0xFFEBE5DB)
+private val InkMain = Color(0xFF33475A)
+private val InkSub = Color(0xFF5E7386)
+private val InkMuted = Color(0xFF8AA2B5)
+private val InkFaint = Color(0xFFA9BECD)
+private val TagBg = Color(0xFFE3F1FB)
+private val SeanBarStart = Color(0xFF7FC0E8)
+private val SeanBarEnd = Color(0xFFAEDAF3)
+private val YuriBarStart = Color(0xFF9DBEE8)
+private val YuriBarEnd = Color(0xFFC5DBF5)
+private val HoleColor = Color(0xFFD3E7F5)
+private val TabBg = Color(0xFFDCECF9)
+
+/** 日记按作者配一只中性姿势的猫：Sean 黑猫、Yuri 白猫。日记没有心情字段，用安静的姿势 */
+private fun diaryCat(isSean: Boolean): Int =
+    if (isSean) me.rerere.rikkahub.R.drawable.cat_b_b_back_heart
+    else me.rerere.rikkahub.R.drawable.cat_b_w_curl_heart
 
 /**
  * 日记本页面：只读。
@@ -390,7 +404,27 @@ private fun DiaryCard(entry: DiaryEntity, isSean: Boolean, onClick: () -> Unit =
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(timeStr, fontSize = 11.sp, color = InkFaint)
-                Text("点开看全文 ›", fontSize = 11.sp, color = InkFaint)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("点开看全文 ›", fontSize = 11.sp, color = InkFaint)
+                    Spacer(Modifier.width(4.dp))
+                    val floatAnim = rememberInfiniteTransition(label = "diarycat")
+                    val catDy by floatAnim.animateFloat(
+                        initialValue = 0f, targetValue = -4f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(1700 + (entry.id % 5) * 160),
+                            repeatMode = RepeatMode.Reverse,
+                        ),
+                        label = "diarycatdy",
+                    )
+                    Image(
+                        painter = painterResource(diaryCat(isSean)),
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .graphicsLayer { translationY = catDy }
+                    )
+                }
             }
         }
     }
