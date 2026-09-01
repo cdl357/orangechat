@@ -83,10 +83,26 @@ private val YuriBarEnd = Color(0xFFC5DBF5)
 private val HoleColor = Color(0xFFD3E7F5)
 private val TabBg = Color(0xFFDCECF9)
 
-/** 日记按作者配一只中性姿势的猫：Sean 黑猫、Yuri 白猫。日记没有心情字段，用安静的姿势 */
-private fun diaryCat(isSean: Boolean): Int =
-    if (isSean) me.rerere.rikkahub.R.drawable.cat_b_b_back_heart
-    else me.rerere.rikkahub.R.drawable.cat_b_w_curl_heart
+/** 日记按作者 + 条目 id 散列到不同姿势，不再每条一样。Sean 黑猫、Yuri 白猫 */
+private val seanDiaryCats = listOf(
+    me.rerere.rikkahub.R.drawable.cat_b_b_back_heart,
+    me.rerere.rikkahub.R.drawable.cat_b_b_sit_heart,
+    me.rerere.rikkahub.R.drawable.cat_b_b_sleep_zzz,
+    me.rerere.rikkahub.R.drawable.cat_b_b_lie_fish,
+    me.rerere.rikkahub.R.drawable.cat_b_b_peek_spark,
+    me.rerere.rikkahub.R.drawable.cat_b_b_door_peek,
+)
+private val yuriDiaryCats = listOf(
+    me.rerere.rikkahub.R.drawable.cat_b_w_curl_heart,
+    me.rerere.rikkahub.R.drawable.cat_b_w_back_heart,
+    me.rerere.rikkahub.R.drawable.cat_b_w_peek_heart,
+    me.rerere.rikkahub.R.drawable.cat_b_w_hold_heart,
+    me.rerere.rikkahub.R.drawable.cat_b_w_door_peek,
+)
+private fun diaryCat(isSean: Boolean, id: Int): Int {
+    val pool = if (isSean) seanDiaryCats else yuriDiaryCats
+    return pool[(id % pool.size + pool.size) % pool.size]
+}
 
 /**
  * 日记本页面：只读。
@@ -417,7 +433,7 @@ private fun DiaryCard(entry: DiaryEntity, isSean: Boolean, onClick: () -> Unit =
                         label = "diarycatdy",
                     )
                     Image(
-                        painter = painterResource(diaryCat(isSean)),
+                        painter = painterResource(diaryCat(isSean, entry.id)),
                         contentDescription = null,
                         contentScale = ContentScale.Fit,
                         modifier = Modifier
