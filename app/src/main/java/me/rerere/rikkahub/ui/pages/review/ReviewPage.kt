@@ -4,7 +4,16 @@
 package me.rerere.rikkahub.ui.pages.review
 
 import androidx.compose.foundation.background
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,18 +73,27 @@ import java.util.TimeZone
 private const val SUPA_URL = "https://byqqwypdfiwvalozihgs.supabase.co"
 private const val SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ5cXF3eXBkZml3dmFsb3ppaGdzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MzY1NDA4MCwiZXhwIjoyMDk5MjMwMDgwfQ.LIbE9DFsLSRhOig5bUUfUP4r7t1ykdNy8L0gZM_xtGw"
 
-// ── 配色：跟日记本一套暖白纸感 ──────────────────────────────
-private val PageBg = Color(0xFFF6F3EC)
+// ── 配色：水蓝纸感 ──────────────────────────────
+private val PageBg = Color(0xFFEAF6FF)
 private val CardBg = Color.White
-private val InkMain = Color(0xFF33322E)
-private val InkBody = Color(0xFF4A4844)
-private val InkSub = Color(0xFF6E6A62)
-private val InkMuted = Color(0xFF9A968C)
-private val InkFaint = Color(0xFFB8B3A8)
-private val LineColor = Color(0xFFE8E2D6)
-private val OkGreen = Color(0xFF6E8F6B)
+private val InkMain = Color(0xFF33475A)
+private val InkBody = Color(0xFF465A6C)
+private val InkSub = Color(0xFF5E7386)
+private val InkMuted = Color(0xFF8AA2B5)
+private val InkFaint = Color(0xFFA9BECD)
+private val LineColor = Color(0xFFD8E8F4)
+private val OkGreen = Color(0xFF5B96C4)
 private val NoRed = Color(0xFFC0705F)
-private val ReasonBg = Color(0xFFF3EFE6)
+private val ReasonBg = Color(0xFFE7F2FB)
+
+/** 待审动作按类型配一只黑猫（这是沈聿淮想做的事） */
+private fun reviewCat(kind: String): Int = when (kind) {
+    "forum_reply" -> me.rerere.rikkahub.R.drawable.cat_b_b_peek_spark
+    "forum_thread" -> me.rerere.rikkahub.R.drawable.cat_b_b_run
+    "email_out" -> me.rerere.rikkahub.R.drawable.cat_b_b_lie_fish
+    "activity_log" -> me.rerere.rikkahub.R.drawable.cat_b_b_back_heart
+    else -> me.rerere.rikkahub.R.drawable.cat_b_b_sit_heart
+}
 
 private val Serif = FontFamily.Serif
 
@@ -335,6 +353,24 @@ private fun ActionCard(
 
         Column(Modifier.fillMaxWidth().padding(start = 18.dp, end = 16.dp, top = 14.dp, bottom = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // 会动的黑猫
+                val floatAnim = rememberInfiniteTransition(label = "reviewcat")
+                val catDy by floatAnim.animateFloat(
+                    initialValue = 0f, targetValue = -4f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(1900), repeatMode = RepeatMode.Reverse,
+                    ),
+                    label = "reviewcatdy",
+                )
+                Image(
+                    painter = painterResource(reviewCat(action.kind)),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .size(34.dp)
+                        .graphicsLayer { translationY = catDy }
+                )
+                Spacer(Modifier.width(6.dp))
                 Surface(shape = RoundedCornerShape(9.dp), color = ReasonBg) {
                     Text(
                         skin.label,
