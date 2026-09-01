@@ -48,6 +48,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -361,29 +362,39 @@ private fun DreamCard(dream: DreamEntry) {
     }
     Surface(
         shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.25f),
+        color = TideCardLo,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
     ) {
-        Column(Modifier.padding(14.dp)) {
-            Text(dream.dream, style = MaterialTheme.typography.bodyMedium)
-            if (dream.residue.isNotBlank()) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.Top) {
+            // 睡着的黑猫，配在梦境卡左边
+            Image(
+                painter = painterResource(me.rerere.rikkahub.R.drawable.cat_b_b_sleep_zzz),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.size(44.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(dream.dream, style = MaterialTheme.typography.bodyMedium, color = TideInk)
+                if (dream.residue.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "余韵：${dream.residue}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TideInkSub,
+                    )
+                }
                 Spacer(Modifier.height(6.dp))
-                Text(
-                    "余韵：${dream.residue}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(timeStr, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(
-                    "清醒度 ${String.format("%.0f%%", dream.lucidity * 100)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.tertiary,
-                )
-                if (dream.source == "model") {
-                    Text("· AI梦", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(timeStr, style = MaterialTheme.typography.labelSmall, color = TideInkSub)
+                    Text(
+                        "清醒度 ${String.format("%.0f%%", dream.lucidity * 100)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TideAccent,
+                    )
+                    if (dream.source == "model") {
+                        Text("· AI梦", style = MaterialTheme.typography.labelSmall, color = TideAccent)
+                    }
                 }
             }
         }
@@ -401,19 +412,19 @@ private fun ArcCard(arc: ArcEntry) {
     }
     Surface(
         shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = TideCardLo,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
     ) {
         Column(Modifier.padding(14.dp)) {
-            Text(arc.text, style = MaterialTheme.typography.bodyMedium)
+            Text(arc.text, style = MaterialTheme.typography.bodyMedium, color = TideInk)
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(timeStr, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(timeStr, style = MaterialTheme.typography.labelSmall, color = TideInkSub)
                 if (arc.label.isNotBlank()) {
-                    Text("· ${arc.label}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    Text("· ${arc.label}", style = MaterialTheme.typography.labelSmall, color = TideAccent)
                 }
                 if (arc.type == "regret") {
-                    Text("· 检讨", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                    Text("· 检讨", style = MaterialTheme.typography.labelSmall, color = Color(0xFFD08A8A))
                 }
             }
         }
