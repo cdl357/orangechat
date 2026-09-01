@@ -189,8 +189,8 @@ fun DiaryPage(vm: DiaryVM = koinViewModel()) {
                             .background(TabBg, RoundedCornerShape(20.dp))
                             .padding(4.dp),
                     ) {
-                        DiaryTab("Sean 的日记", tab == 0, Modifier.weight(1f)) { tab = 0 }
-                        DiaryTab("Yuri 的日记", tab == 1, Modifier.weight(1f)) { tab = 1 }
+                        DiaryTab("Sean 的日记", tab == 0, Modifier.weight(1f), me.rerere.rikkahub.R.drawable.cat_b_b_peek_spark) { tab = 0 }
+                        DiaryTab("Yuri 的日记", tab == 1, Modifier.weight(1f), me.rerere.rikkahub.R.drawable.cat_b_w_peek_heart) { tab = 1 }
                     }
                 }
 
@@ -323,20 +323,35 @@ private fun DiaryDetailDialog(entry: DiaryEntity, isSean: Boolean, onDismiss: ()
 }
 
 @Composable
-private fun DiaryTab(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun DiaryTab(label: String, selected: Boolean, modifier: Modifier = Modifier, catRes: Int, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         modifier = modifier,
         color = if (selected) CardBg else Color.Transparent,
         shape = RoundedCornerShape(16.dp),
     ) {
-        Text(
-            label,
-            fontSize = 13.sp,
-            color = if (selected) InkMain else InkMuted,
-            modifier = Modifier.padding(vertical = 10.dp),
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        )
+        Row(
+            modifier = Modifier.padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // 选中的作者头上冒出对应的猫（Sean黑猫、Yuri白猫），没选中时暗一点
+            Image(
+                painter = painterResource(catRes),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .size(26.dp)
+                    .graphicsLayer { alpha = if (selected) 1f else 0.4f },
+            )
+            Spacer(Modifier.width(5.dp))
+            Text(
+                label,
+                fontSize = 13.sp,
+                color = if (selected) InkMain else InkMuted,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+        }
     }
 }
 
