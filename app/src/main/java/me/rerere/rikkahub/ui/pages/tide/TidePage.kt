@@ -272,41 +272,38 @@ fun TidePage() {
                 }
             }
 
-            // Tabs: 梦境 / 独白
+            // 独白（梦境已移到独立的「梦境」页，这里不再重复显示）
             item {
-                TabRow(selectedTabIndex = selectedTab) {
-                    Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("梦境 (${dreams.size})") })
-                    Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("独白 (${arcs.size})") })
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, top = 4.dp, bottom = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("独白", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium, color = TideInk)
+                    Spacer(Modifier.width(6.dp))
+                    Text("他独处时想的话 · ${arcs.size}", style = MaterialTheme.typography.labelSmall, color = TideInkSub)
                 }
             }
 
-            when (selectedTab) {
-                0 -> {
-                    if (dreams.isEmpty()) {
-                        item {
-                            Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
-                                Text("还没有梦境记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    } else {
-                        items(dreams, key = { it.createdAt }) { dream ->
-                            DreamCard(dream)
-                        }
+            if (arcs.isEmpty()) {
+                item {
+                    Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
+                        Text("还没有独白记录", color = TideInkSub)
                     }
                 }
-                1 -> {
-                    if (arcs.isEmpty()) {
-                        item {
-                            Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
-                                Text("还没有独白记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    } else {
-                        items(arcs, key = { it.time + it.text.take(10) }) { arc ->
-                            ArcCard(arc)
-                        }
-                    }
+            } else {
+                items(arcs, key = { it.time + it.text.take(10) }) { arc ->
+                    ArcCard(arc)
                 }
+            }
+
+            item {
+                Text(
+                    "梦不在这里了，去「梦境」那间看",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TideInkSub,
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
             }
 
             item { Spacer(Modifier.height(16.dp)) }
