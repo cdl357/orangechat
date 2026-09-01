@@ -86,12 +86,24 @@ private val OkGreen = Color(0xFF5B96C4)
 private val NoRed = Color(0xFFC0705F)
 private val ReasonBg = Color(0xFFE7F2FB)
 
-/** 待审动作按类型配一只黑猫（这是沈聿淮想做的事） */
-private fun reviewCat(kind: String): Int = when (kind) {
+/** 待审动作配黑猫。forum/email 用固定寓意的姿势；独处记录条目多，按 id 散列到不同姿势，不再一样 */
+private val activityCats = listOf(
+    me.rerere.rikkahub.R.drawable.cat_b_b_back_heart,
+    me.rerere.rikkahub.R.drawable.cat_b_b_sit_heart,
+    me.rerere.rikkahub.R.drawable.cat_b_b_door_peek,
+    me.rerere.rikkahub.R.drawable.cat_b_b_lie_fish,
+    me.rerere.rikkahub.R.drawable.cat_b_b_peek_spark,
+    me.rerere.rikkahub.R.drawable.cat_b_b_sleep_zzz,
+    me.rerere.rikkahub.R.drawable.cat_b_b_run,
+)
+private fun reviewCat(kind: String, seed: String): Int = when (kind) {
     "forum_reply" -> me.rerere.rikkahub.R.drawable.cat_b_b_peek_spark
     "forum_thread" -> me.rerere.rikkahub.R.drawable.cat_b_b_run
     "email_out" -> me.rerere.rikkahub.R.drawable.cat_b_b_lie_fish
-    "activity_log" -> me.rerere.rikkahub.R.drawable.cat_b_b_back_heart
+    "activity_log" -> {
+        val h = (seed.hashCode() % activityCats.size + activityCats.size) % activityCats.size
+        activityCats[h]
+    }
     else -> me.rerere.rikkahub.R.drawable.cat_b_b_sit_heart
 }
 
@@ -363,7 +375,7 @@ private fun ActionCard(
                     label = "reviewcatdy",
                 )
                 Image(
-                    painter = painterResource(reviewCat(action.kind)),
+                    painter = painterResource(reviewCat(action.kind, action.id)),
                     contentDescription = null,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
