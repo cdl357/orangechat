@@ -124,13 +124,33 @@ data class PendingAction(
 
 private data class KindSkin(val label: String, val hint: String, val a: Color, val b: Color)
 
-private fun skinOf(kind: String): KindSkin = when (kind) {
-    "forum_reply" -> KindSkin("回帖", "要发到花园的某个帖子下面", Color(0xFF7E96A8), Color(0xFFA6BAC8))
-    "forum_thread" -> KindSkin("发帖", "要在花园发一个新帖子", Color(0xFF8B8FB0), Color(0xFFB2B5CE))
-    "email_out" -> KindSkin("寄信", "要发给花园外面的人", Color(0xFFC49A6C), Color(0xFFDCBB94))
-    "activity_log" -> KindSkin("独处记录", "他这次独处做了什么、想了什么", Color(0xFF8DAF88), Color(0xFFB3CFB0))
-    else -> KindSkin(kind, "", Color(0xFF9A968C), Color(0xFFBDB8AE))
+private fun skinOf(kind: String, act: String): KindSkin = when {
+    kind == "forum_reply" -> KindSkin("回帖", "要发到花园的某个帖子下面", Color(0xFF7E96A8), Color(0xFFA6BAC8))
+    kind == "forum_thread" -> KindSkin("发帖", "要在花园发一个新帖子", Color(0xFF8B8FB0), Color(0xFFB2B5CE))
+    kind == "email_out" -> KindSkin("寄信", "要发给花园外面的人", Color(0xFFC49A6C), Color(0xFFDCBB94))
+    // activity_log 的真实动作藏在 title 里，按动作细分文案
+    act == "write_her" -> KindSkin("写了信", "他独处时给你写了一封信", Color(0xFF7FB0C4), Color(0xFFAEDAF3))
+    act == "post_moment" -> KindSkin("发了朋友圈", "他独处时发了一条朋友圈", Color(0xFF88AF98), Color(0xFFB3CFC0))
+    act == "post_note" -> KindSkin("贴了便利贴", "他独处时在留言板贴了一张", Color(0xFFC4A56C), Color(0xFFDCC894))
+    act == "write_diary" -> KindSkin("写了日记", "他独处时写了一篇日记", Color(0xFF9A8FB0), Color(0xFFC5B5CE))
+    else -> KindSkin("独处记录", "他这次独处做了什么", Color(0xFF8DAF88), Color(0xFFB3CFB0))
 }
+
+/** 从 activity_log 的 title（形如 "09/01 14:00 write_her"）里抽出动作名 */
+private fun actionOf(a: PendingAction): String {
+    if (a.kind != "activity_log") return a.kind
+    return a.title.trim().substringAfterLast(' ').trim()
+}
+
+/** 给 reviewCat 用：把 write_diary 之类的动作映射成一个能让猫散列出不同姿势的 seed kind */
+private fun actionCatKind(kind: String, act: String): String =
+    if (kind == "activity_log") "activity_log" else kind
+
+/** 没有对外产出的动作，不该占"他想说的话"的位置 */
+private val NO_OUTPUT_ACTIONS = setOf("nothing", "read_thread", "check_mail", "pick_bottles", "reply_thread")
+
+/** 他真的对你/对外做了的事（已经发生，只是同步给你），归到"我做过的" */
+private val DID_ACTIONS = setOf("write_her", "post_moment", "post_note", "write_diary")
 
 private fun conn(url: String, method: String = "GET"): HttpURLConnection =
     (URL(url).openConnection() as HttpURLConnection).apply {
@@ -205,10 +225,15 @@ fun ReviewPage() {
 
     LaunchedEffect(Unit) { reload() }
 
-    // "待你看" = pending + info(活动记录)
-    val pending = all.filter { it.status == "pending" || it.status == "info" }
-    val history = all.filter { it.status != "pending" && it.status != "info" }
-    val shown = if (showHistory) history else pending
+    // 先把"没产出"的独处记录（nothing/只是看帖/查邮箱/捡瓶子）整个滤掉——它们不该占位置
+    val meaningful = all.filter { actionOf(it) !in NO_OUTPUT_ACTIONS }
+    // "等你把关" = 真正要审的对外动作（回帖/发帖/寄信），status=pending
+    val toReview = meaningful.filter {
+        it.status == "pending" && it.kind in setOf("forum_reply", "forum_thread", "email_out")
+    }
+    // "我做过的" = 他直接做了的事（写信/朋友圈/便利贴/日记），只是同步给你，无需审批
+    val didList = meaningful.filter { actionOf(it) in DID_ACTIONS }
+    val shown = if (showHistory) didList else toReview
 
     Scaffold(
         containerColor = PageBg,
@@ -236,14 +261,16 @@ fun ReviewPage() {
             // 说明 + 切换
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                 Text(
-                    "沈聿淮每四小时独处一次。想给你写信他直接发，" +
-                        "但要发到花园、或者寄给别人的话，都会先放在这里等你点头。",
+                    if (showHistory)
+                        "这些是他独处时直接做的：写信、发朋友圈、贴便利贴、写日记。已经发生了，这里只是告诉你一声。"
+                    else
+                        "要发到花园、或者寄信给别人，他会先放这里等你点头。写信、朋友圈、便利贴这些他直接做，不占这里。",
                     fontSize = 11.5.sp, color = InkMuted, lineHeight = 18.sp,
                 )
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Tab("待你看 ${pending.size}", !showHistory) { showHistory = false }
-                    Tab("看过的 ${history.size}", showHistory) { showHistory = true }
+                    Tab("等你把关 ${toReview.size}", !showHistory) { showHistory = false }
+                    Tab("我做过的 ${didList.size}", showHistory) { showHistory = true }
                 }
                 Spacer(Modifier.height(4.dp))
             }
@@ -257,8 +284,8 @@ fun ReviewPage() {
                         ) {
                             Text(
                                 if (loading) ""
-                                else if (showHistory) "还没有处理过的"
-                                else "他现在没有话要跟外面说",
+                                else if (showHistory) "他还没独处做过什么"
+                                else "他现在没有要你把关的事",
                                 fontSize = 13.sp, color = InkMuted,
                                 textAlign = TextAlign.Center,
                             )
@@ -337,11 +364,14 @@ private fun ActionCard(
     onReject: () -> Unit,
     onMarkRead: () -> Unit,
 ) {
-    val skin = remember(action.kind) { skinOf(action.kind) }
+    val act = remember(action.id, action.title) { actionOf(action) }
+    val skin = remember(action.kind, act) { skinOf(action.kind, act) }
     val timeStr = remember(action.createdAt) { formatTime(action.createdAt) }
     var expanded by remember { mutableStateOf(false) }
-    val isPending = action.status == "pending"
-    val isInfo = action.status == "info"
+    // "等你把关"的对外动作才有审批按钮；"我做过的"是既成事实，只给一个"知道了"
+    val isPending = action.status == "pending" &&
+        action.kind in setOf("forum_reply", "forum_thread", "email_out")
+    val isInfo = !isPending
 
     Box(
         modifier = Modifier
@@ -375,7 +405,7 @@ private fun ActionCard(
                     label = "reviewcatdy",
                 )
                 Image(
-                    painter = painterResource(reviewCat(action.kind, action.id)),
+                    painter = painterResource(reviewCat(actionCatKind(action.kind, act), action.id)),
                     contentDescription = null,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
@@ -393,14 +423,14 @@ private fun ActionCard(
                 Spacer(Modifier.width(8.dp))
                 Text(timeStr, fontFamily = Serif, fontSize = 11.sp, color = InkFaint)
                 Spacer(Modifier.weight(1f))
-                if (!isPending && !isInfo) {
+                if (!isPending) {
+                    // "我做过的"这组是既成事实，右上角给个"已完成"标记
                     Text(
                         when (action.status) {
                             "approved" -> "已同意 · 等他发"
                             "executed" -> "已发出"
                             "rejected" -> "你否掉了"
-                            "read" -> "已读"
-                            else -> action.status
+                            else -> "已完成"
                         },
                         fontSize = 10.5.sp,
                         color = if (action.status == "rejected") NoRed else OkGreen,
