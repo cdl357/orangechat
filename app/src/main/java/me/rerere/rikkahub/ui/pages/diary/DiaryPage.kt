@@ -37,6 +37,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -123,6 +125,9 @@ fun DiaryPage(vm: DiaryVM = koinViewModel()) {
     // 点开的那篇日记（null = 没打开详情）。列表卡片只显示摘要，全文靠详情弹窗看。
     var detailEntry by remember { mutableStateOf<DiaryEntity?>(null) }
 
+    // 小鑫写日记的弹窗（只在 Yuri tab 出现；Sean 的日记是 AI 写的，只读）
+    var writing by remember { mutableStateOf(false) }
+
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(syncMessage) {
         val msg = syncMessage
@@ -135,6 +140,18 @@ fun DiaryPage(vm: DiaryVM = koinViewModel()) {
     Scaffold(
         containerColor = NotebookBgOuter,
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        floatingActionButton = {
+            // 只有小鑫自己那一栏能写；Sean 的日记由他自己写，你只看
+            if (tab == 1) {
+                FloatingActionButton(
+                    onClick = { writing = true },
+                    containerColor = Color(0xFF7FB0C4),
+                    contentColor = Color.White,
+                ) {
+                    Text("✎", fontSize = 22.sp)
+                }
+            }
+        },
         topBar = {
             TopAppBar(
                 title = { Text("日记本", color = InkMain) },
@@ -233,6 +250,21 @@ fun DiaryPage(vm: DiaryVM = koinViewModel()) {
             onDismiss = { detailEntry = null },
         )
     }
+
+    if (writing) {
+        WriteDiaryDialog(
+            onDismiss = { writing = false },
+            onSave = { title, content ->
+                vm.save(
+                    title = title.ifBlank { "小鑫的日记" },
+                    content = content,
+                    attachment = -1, tenderness = -1, heartache = -1,
+                    author = "yuri",
+                )
+                writing = false
+            },
+        )
+    }
 }
 
 /**
@@ -315,6 +347,51 @@ private fun DiaryDetailDialog(entry: DiaryEntity, isSean: Boolean, onDismiss: ()
                         TextButton(onClick = onDismiss) {
                             Text("收起", fontSize = 13.sp, color = InkSub)
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WriteDiaryDialog(onDismiss: () -> Unit, onSave: (String, String) -> Unit) {
+    var title by remember { mutableStateOf("") }
+    var content by remember { mutableStateOf("") }
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(16.dp), color = Color.White, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().padding(18.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Image(
+                        painter = painterResource(me.rerere.rikkahub.R.drawable.cat_b_w_hold_heart),
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.size(30.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text("写一篇日记", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = InkMain)
+                }
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("标题（可留空）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = content,
+                    onValueChange = { content = it },
+                    label = { Text("今天想写点什么…") },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp),
+                )
+                Spacer(Modifier.height(14.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("取消", color = InkMuted) }
+                    Spacer(Modifier.width(4.dp))
+                    TextButton(onClick = { if (content.isNotBlank()) onSave(title, content) }) {
+                        Text("保存", color = Color(0xFF4A93C9), fontWeight = FontWeight.Medium)
                     }
                 }
             }
