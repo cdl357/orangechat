@@ -276,7 +276,7 @@ fun TidePage() {
             // 独白（梦境已移到独立的「梦境」页，这里不再重复显示）
             item {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, top = 4.dp, bottom = 2.dp),
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text("独白", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium, color = TideInk)
